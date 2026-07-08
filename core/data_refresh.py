@@ -61,7 +61,7 @@ async def run_refresh_pipeline(app=None):
                     stock = item.get("stock_code")
                     if stock:
                         if stock in holdings_data:
-                            holdings_data[stock]["quantity"] += int(item.get("quantity", 0) or 0)
+                            holdings_data[stock]["quantity"] = max(holdings_data[stock]["quantity"], int(item.get("quantity", 0) or 0))
                             holdings_data[stock]["average_price"] = float(item.get("average_price", 0) or holdings_data[stock]["average_price"])
                             if float(item.get("current_market_price", 0) or item.get("current_price", 0) or 0) > 0:
                                 holdings_data[stock]["current_price"] = float(item.get("current_market_price", 0) or item.get("current_price", 0))
