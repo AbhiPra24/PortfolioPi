@@ -17,9 +17,15 @@ with col2:
         execute_db("INSERT INTO refresh_requests (requested_at) VALUES (CURRENT_TIMESTAMP)")
         st.success("Refresh requested — will run within ~60s")
 
-data = query_db("SELECT stock_code, quantity, average_price, current_price, timestamp FROM holdings_snapshot ORDER BY timestamp DESC")
+breeze_sync_ts = query_db("SELECT timestamp FROM job_heartbeats WHERE job_name = 'run_breeze_sync' ORDER BY timestamp DESC LIMIT 1")
+market_data_ts = query_db("SELECT timestamp FROM job_heartbeats WHERE job_name = 'run_market_data_refresh' ORDER BY timestamp DESC LIMIT 1")
+
+st.caption(f"**Holdings (Quantity/Avg Price) as of:** {breeze_sync_ts[0][0] if breeze_sync_ts else 'N/A (Pending Breeze Sync)'}")
+st.caption(f"**Prices & Signals as of:** {market_data_ts[0][0] if market_data_ts else 'N/A (Pending Market Data Refresh)'}")
+
+data = query_db("SELECT stock_code, quantity, average_price, current_price FROM holdings_snapshot ORDER BY stock_code ASC")
 if data:
-    df = pd.DataFrame(data, columns=['Stock Code', 'Quantity', 'Avg Price', 'Current Price', 'Timestamp'])
+    df = pd.DataFrame(data, columns=['Stock Code', 'Quantity', 'Avg Price', 'Current Price'])
     df['Invested'] = df['Quantity'] * df['Avg Price']
     df['Current Value'] = df['Quantity'] * df['Current Price']
     df['P&L'] = df['Current Value'] - df['Invested']

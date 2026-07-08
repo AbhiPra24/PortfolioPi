@@ -5,7 +5,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.ext import Application
 
-from .data_refresh import run_refresh_pipeline
+from .data_refresh import run_breeze_sync, run_market_data_refresh
 
 import aiosqlite
 from app_config import settings
@@ -13,8 +13,13 @@ from app_config import settings
 logger = logging.getLogger(__name__)
 
 async def daily_digest_job(app: Application):
-    logger.info("Running daily digest job...")
-    await run_refresh_pipeline(app)
+    logger.info("Running daily breeze sync & digest job...")
+    await run_breeze_sync(app, silent=True)
+    await run_market_data_refresh(app, send_digest=True)
+
+async def market_data_job(app: Application):
+    logger.info("Running market data refresh...")
+    await run_market_data_refresh(app, send_digest=False)
 
 async def process_refresh_requests_job(app: Application):
     try:
@@ -25,7 +30,8 @@ async def process_refresh_requests_job(app: Application):
             if row:
                 req_id = row[0]
                 logger.info(f"Processing manual refresh request {req_id}...")
-                await run_refresh_pipeline(app)
+                await run_breeze_sync(app, silent=True)
+                await run_market_data_refresh(app, send_digest=True)
                 await db.execute("UPDATE refresh_requests SET processed_at = CURRENT_TIMESTAMP WHERE id = ?", (req_id,))
                 await db.commit()
     except Exception as e:
@@ -65,6 +71,11 @@ async def db_backup_job():
 def start_scheduler(app: Application):
     scheduler = AsyncIOScheduler()
     scheduler.add_job(daily_digest_job, 'cron', hour=8, minute=0, args=[app], timezone='Asia/Kolkata')
+    
+    # Run market data refresh every 30 minutes during market hours (9:15 to 15:30) Monday to Friday
+    # Easiest way with cron:
+    scheduler.add_job(market_data_job, 'cron', day_of_week='mon-fri', hour='9-15', minute='0,30', args=[app], timezone='Asia/Kolkata')
+    
     scheduler.add_job(db_backup_job, 'cron', hour=23, minute=30, timezone='Asia/Kolkata')
     scheduler.add_job(process_refresh_requests_job, 'interval', seconds=60, args=[app])
     scheduler.start()

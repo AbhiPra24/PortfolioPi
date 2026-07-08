@@ -107,4 +107,13 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS ticker_mapping (
+                stock_code TEXT PRIMARY KEY,
+                nse_symbol TEXT,
+                isin TEXT,
+                resolved_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         await db.commit()
