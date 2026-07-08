@@ -50,6 +50,7 @@ st.subheader("Latest Technical Signals")
 signals = query_db("""
     SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score, timestamp 
     FROM signals 
+    WHERE composite_score IS NOT NULL
     ORDER BY timestamp DESC, composite_score DESC LIMIT 50
 """)
 

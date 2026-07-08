@@ -5,25 +5,17 @@ import sys
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from db import query_db
+from db import query_db, execute_db
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
-try:
-    from core.data_refresh import run_refresh_pipeline
-except ImportError:
-    async def run_refresh_pipeline():
-        await asyncio.sleep(2)
 
 st.header("Portfolio Snapshot")
 
 col1, col2 = st.columns([0.8, 0.2])
 with col2:
     if st.button("🔄 Refresh Now"):
-        with st.spinner("Refreshing data..."):
-            asyncio.run(run_refresh_pipeline())
-            st.success("Data Refreshed!")
-            st.rerun()
+        execute_db("INSERT INTO refresh_requests (requested_at) VALUES (CURRENT_TIMESTAMP)")
+        st.success("Refresh requested — will run within ~60s")
 
 data = query_db("SELECT stock_code, quantity, average_price, current_price, timestamp FROM holdings_snapshot ORDER BY timestamp DESC")
 if data:
@@ -48,7 +40,15 @@ if data:
     m_col3.metric("Unrealized P&L", f"₹{df['P&L'].sum():,.2f}", f"{(df['P&L'].sum() / df['Invested'].sum() * 100):.2f}%")
 
     st.subheader("Portfolio Allocation")
-    fig = px.pie(df, values='Current Value', names='Stock Code', hole=0.4, title='Allocation by Current Value')
+    
+    total_val = df['Current Value'].sum()
+    threshold = total_val * 0.015
+    
+    pie_df = df.copy()
+    pie_df.loc[pie_df['Current Value'] < threshold, 'Stock Code'] = 'Others'
+    pie_df = pie_df.groupby('Stock Code', as_index=False)['Current Value'].sum()
+    
+    fig = px.pie(pie_df, values='Current Value', names='Stock Code', hole=0.4, title='Allocation by Current Value')
     st.plotly_chart(fig, use_container_width=True)
 
 else:

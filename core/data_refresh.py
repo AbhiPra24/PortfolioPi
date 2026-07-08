@@ -166,4 +166,5 @@ async def run_refresh_pipeline(app=None):
 
     except Exception as e:
         logger.exception("Error in run_refresh_pipeline")
-        if app: await broadcast_message(app, f"🚨 Unhandled Error in data refresh pipeline:\n{str(e)}")
+        import html
+        if app: await broadcast_message(app, f"🚨 Unhandled Error in data refresh pipeline:\n{html.escape(str(e))}")

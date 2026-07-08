@@ -24,13 +24,26 @@ def format_signals_message(signals: list) -> str:
         return "No signals generated for today."
 
     msg = "🎯 <b>Top Watchlist Signals</b>\n\n"
+    # filter out None scores
+    valid_signals = [s for s in signals if s[8] is not None]
+    if not valid_signals:
+        return "No signals generated for today (insufficient history)."
+
     # sort by composite score
-    sorted_signals = sorted(signals, key=lambda x: x[8], reverse=True)[:10]
+    sorted_signals = sorted(valid_signals, key=lambda x: x[8], reverse=True)[:10]
 
     for s in sorted_signals:
         stock, rsi, macd, macd_sig, sma50, sma200, pct_52w, vol_ratio, score = s
-        msg += f"<b>{stock}</b> (Score: {score:.0f})\n"
-        msg += f"  RSI: {rsi:.1f} | Vol Spike: {vol_ratio:.1f}x\n"
-        msg += f"  SMA50: {sma50:.1f} | SMA200: {sma200:.1f}\n"
-        msg += f"  52w Dist: {pct_52w:.1f}%\n\n"
+        
+        score_str = f"{score:.0f}" if score is not None else "N/A"
+        rsi_str = f"{rsi:.1f}" if rsi is not None else "N/A"
+        vol_str = f"{vol_ratio:.1f}" if vol_ratio is not None else "N/A"
+        sma50_str = f"{sma50:.1f}" if sma50 is not None else "N/A"
+        sma200_str = f"{sma200:.1f}" if sma200 is not None else "N/A"
+        pct_str = f"{pct_52w:.1f}" if pct_52w is not None else "N/A"
+        
+        msg += f"<b>{stock}</b> (Score: {score_str})\n"
+        msg += f"  RSI: {rsi_str} | Vol Spike: {vol_str}x\n"
+        msg += f"  SMA50: {sma50_str} | SMA200: {sma200_str}\n"
+        msg += f"  52w Dist: {pct_str}%\n\n"
     return msg
