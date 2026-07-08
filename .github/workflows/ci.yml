@@ -30,7 +30,7 @@ jobs:
         run: ruff check .
         
       - name: Run Pytest
-        run: pytest tests/
+        run: PYTHONPATH=. pytest tests/
         
       - name: Docker Build Check
         run: docker compose build
