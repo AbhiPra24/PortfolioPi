@@ -1,7 +1,7 @@
 import pandas as pd
 
 def check_trend_template(df: pd.DataFrame) -> int:
-    if len(df) < 252:
+    if len(df) < 200:
         return 0
     
     df = df.sort_values('date').reset_index(drop=True)

@@ -21,7 +21,7 @@ def get_historical_with_retry(breeze, stock_code, from_date, to_date):
         interval="1day",
         from_date=from_date,
         to_date=to_date,
-        stock_code=stock_code,
+        stock_code="NIFTY" if stock_code == "_NIFTY50" else stock_code,
         exchange_code="NSE",
         product_type="cash"
     )
