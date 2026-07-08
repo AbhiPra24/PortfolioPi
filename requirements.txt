@@ -1,0 +1,8 @@
+python-telegram-bot~=21.0
+breeze-connect
+aiosqlite
+apscheduler
+pydantic-settings
+python-dotenv
+pandas
+numpy
