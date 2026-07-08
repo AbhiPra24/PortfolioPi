@@ -9,7 +9,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from algo.screener import run_screener
 from bot.broadcaster import broadcast_message
 from bot.formatters import format_portfolio_message, format_signals_message
-from config import settings
+from app_config import settings
 from core.breeze_client import BreezeClient, SessionExpiredError
 from core.session_store import get_session
 

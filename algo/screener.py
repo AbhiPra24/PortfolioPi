@@ -1,7 +1,7 @@
 import aiosqlite
 import pandas as pd
 
-from config import settings
+from app_config import settings
 
 from .indicators import calculate_macd, calculate_rsi, calculate_sma, proximity_to_52w_high, volume_spike
 

@@ -2,7 +2,7 @@ import logging
 
 import aiosqlite
 
-from config import settings
+from app_config import settings
 
 logger = logging.getLogger(__name__)
 

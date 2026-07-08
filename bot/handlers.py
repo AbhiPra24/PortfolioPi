@@ -4,7 +4,7 @@ import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from config import settings
+from app_config import settings
 from core.breeze_client import BreezeClient
 from core.session_store import get_session, save_session
 

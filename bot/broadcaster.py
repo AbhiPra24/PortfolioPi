@@ -3,7 +3,7 @@ import os
 
 from telegram.ext import Application
 
-from config import settings
+from app_config import settings
 
 logger = logging.getLogger(__name__)
 

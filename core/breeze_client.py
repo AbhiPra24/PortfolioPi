@@ -1,6 +1,6 @@
 from breeze_connect import BreezeConnect
 
-from config import settings
+from app_config import settings
 
 
 class SessionExpiredError(Exception):

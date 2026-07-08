@@ -1,7 +1,7 @@
 import aiosqlite
 import pandas as pd
 
-from config import settings
+from app_config import settings
 
 from .ranking import calculate_composite_score
 

@@ -1,6 +1,6 @@
 from telegram.ext import Application, CommandHandler
 
-from config import settings
+from app_config import settings
 
 from .handlers import (
     funds_command,
