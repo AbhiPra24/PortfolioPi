@@ -50,14 +50,15 @@ st.subheader("Latest Technical Signals")
 signals = query_db("""
     SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score, timestamp 
     FROM signals 
-    WHERE composite_score IS NOT NULL
-    ORDER BY timestamp DESC, composite_score DESC LIMIT 50
+    ORDER BY timestamp DESC, COALESCE(composite_score, -999) DESC LIMIT 50
 """)
 
 if signals:
     df = pd.DataFrame(signals, columns=[
         'Stock', 'RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score', 'Timestamp'
     ])
+    for col in ['RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
     st.dataframe(df, use_container_width=True)
-else:
-    st.info("No signals generated yet.")
+    if df['Score'].isna().all():
+        st.caption("⏰ Composite scores are calculated during market hours (9:15am–3:30pm IST). Showing raw indicator data.")

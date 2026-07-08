@@ -3,3 +3,5 @@ data/
 logs/
 __pycache__
 tests/
+venv/
+.venv/
