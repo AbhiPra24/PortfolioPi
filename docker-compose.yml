@@ -33,11 +33,12 @@ services:
           cpus: '0.25'
           memory: 256M
     volumes:
-      - ./data:/app/data:ro
+      - ./data:/app/data
     ports:
       - "0.0.0.0:8653:8501"
     environment:
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-admin}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?DASHBOARD_PASSWORD must be set in .env}
+      - HOME=/app
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
       interval: 30s

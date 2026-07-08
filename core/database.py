@@ -75,4 +75,34 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS refresh_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                processed_at DATETIME
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS stage_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stock_code TEXT,
+                date TEXT,
+                stage INTEGER,
+                sma_150 REAL,
+                slope REAL,
+                UNIQUE(stock_code, date)
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS stock_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stock_code TEXT UNIQUE,
+                action TEXT,
+                rationale TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         await db.commit()

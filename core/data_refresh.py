@@ -93,7 +93,7 @@ async def run_refresh_pipeline(app=None):
             async with db.execute("SELECT stock_code FROM watchlist") as cursor:
                 watchlist = [row[0] for row in await cursor.fetchall()]
 
-            all_tickers = list(set(list(holdings_data.keys()) + watchlist))
+            all_tickers = list(set(list(holdings_data.keys()) + watchlist + ["_NIFTY50"]))
 
             # 3. Backfill OHLCV cache
             for ticker in all_tickers:
@@ -152,12 +152,57 @@ async def run_refresh_pipeline(app=None):
             # 4. Run screener
             signals = await run_screener()
 
+            # 4b. Run Action Classifier
+            import pandas as pd
+            from algo.action_classifier import get_stock_action
+            
+            async with db.execute("SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = '_NIFTY50' ORDER BY date") as cursor:
+                nifty_rows = await cursor.fetchall()
+                nifty_df = pd.DataFrame(nifty_rows, columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
+                
+            action_inserts = []
+            stage_inserts = []
+            
+            for ticker in list(set(list(holdings_data.keys()) + watchlist)):
+                async with db.execute("SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = ? ORDER BY date", (ticker,)) as cursor:
+                    stock_rows = await cursor.fetchall()
+                    if len(stock_rows) > 0:
+                        stock_df = pd.DataFrame(stock_rows, columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
+                        is_holding = ticker in holdings_data
+                        res = get_stock_action(ticker, stock_df, nifty_df, is_holding)
+                        
+                        action_inserts.append((ticker, res['action'], res['rationale']))
+                        last_date = stock_df.iloc[-1]['date']
+                        stage_inserts.append((ticker, last_date, res['stage'], res['sma_150'], res['slope']))
+
+            if action_inserts:
+                await db.execute("DELETE FROM stock_actions")
+                await db.executemany("""
+                    INSERT INTO stock_actions (stock_code, action, rationale)
+                    VALUES (?, ?, ?)
+                """, action_inserts)
+                
+            if stage_inserts:
+                await db.executemany("""
+                    INSERT OR REPLACE INTO stage_history (stock_code, date, stage, sma_150, slope)
+                    VALUES (?, ?, ?, ?, ?)
+                """, stage_inserts)
+            
+            await db.commit()
+
             # 5. Format HTML digest and broadcast
             holdings_list = list(holdings_data.values())
             port_msg = format_portfolio_message(holdings_list)
             sig_msg = format_signals_message(signals)
 
-            digest = f"{port_msg}\n\n{sig_msg}"
+            action_msg = ""
+            if action_inserts:
+                action_msg = "<b>Action Plan Alerts:</b>\n"
+                for r in action_inserts:
+                    if "SELL" in r[1] or "TRIM" in r[1]:
+                        action_msg += f"🚨 <b>{r[0]}</b>: {r[1]} - <i>{r[2]}</i>\n"
+
+            digest = f"{port_msg}\n\n{sig_msg}\n\n{action_msg}"
             if app: await broadcast_message(app, digest)
 
             # 6. Record heartbeat on complete success

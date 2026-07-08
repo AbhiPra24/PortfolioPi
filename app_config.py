@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr
     telegram_owner_ids: str
     db_path: str = "data/portfoliopi.db"
-    dashboard_password: str = "admin"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

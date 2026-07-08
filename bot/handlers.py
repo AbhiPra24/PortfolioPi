@@ -67,7 +67,7 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
     # Immediately validate token
     try:
         breeze = BreezeClient(token)
-        details = breeze.get_customer_details(api_session=token)
+        details = breeze.get_customer_details()
         if details.get("Success"):
             await save_session(token)
             await update.message.reply_text("<b>Success!</b> Session token saved and validated.", parse_mode='HTML')
@@ -209,6 +209,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/start - Welcome message\n"
         "/portfolio - View current holdings\n"
         "/signals - View today's signals\n"
+        "/action_plan - View portfolio action classification\n"
         "/watchlist list|add|remove &lt;TICKER&gt; - Manage watchlist\n"
         "/price &lt;TICKER&gt; - Get current stock price\n"
         "/funds - View available funds\n"
@@ -217,3 +218,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help - Show this message"
     )
     await update.message.reply_text(help_text, parse_mode='HTML')
+
+@owner_only
+async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async with aiosqlite.connect(settings.db_path) as db:
+        async with db.execute("SELECT stock_code, action, rationale FROM stock_actions ORDER BY action") as cur:
+            rows = await cur.fetchall()
+
+    if not rows:
+        await update.message.reply_text("No action plan data available.", parse_mode='HTML')
+        return
+
+    msg = "<b>Portfolio Action Plan:</b>\n"
+    for r in rows:
+        if r[1] != "HOLD":
+            msg += f"\n<b>{r[0]}</b>: {r[1]}\n<i>{r[2]}</i>\n"
+    
+    if len(msg) > 4000:
+        msg = msg[:4000] + "\n... (truncated)"
+        
+    await update.message.reply_text(msg, parse_mode='HTML')
