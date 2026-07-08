@@ -2,7 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-- **Fix**: Reverted default action classifier data thresholds from 200 back to 252 after deep historical backfill completed.
 - **Feature**: Added deep manual historical backfill script (`scripts/backfill_history.py`) to fetch 3 years of OHLCV data.
 - **Fix**: Fixed dashboard refresh button via a shared `refresh_requests` polling table.
 - **Feature**: Added nightly SQLite backup job (`core/scheduler.py`).

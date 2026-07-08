@@ -1,8 +1,8 @@
 # Operations Runbook
 
 ## Daily Session Refresh
-The ICICI Breeze API token expires daily at 6:00 AM IST. You must log in via the Dashboard to generate a new token.
-See the [README](../README.md#daily-login-flow) for the step-by-step Daily Login Flow.
+The ICICI Breeze API token expires daily, exact time undocumented by ICICI. You must authenticate to generate a new token.
+See the [README](../README.md#daily-session-flow) for the step-by-step Daily Session Flow (browser login -> Telegram `/refresh_session` command).
 
 ## Manual Historical Backfills
 To deeply backfill history (e.g. 3 years) for all tickers currently in your holdings and watchlist, run the manual script:
@@ -21,17 +21,17 @@ docker exec portfoliopi-bot sqlite3 data/portfoliopi.db "SELECT stock_code, COUN
 If most tickers show ~700+ days cached (roughly 3 years minus non-trading days), it worked.
 
 ## Restoring from Backups
-A nightly backup of the SQLite database is taken at 2:00 AM IST. Backups are stored in `data/backups/` and retained for 7 days.
+A nightly backup of the SQLite database is taken at 11:30 PM IST. Backups are stored in `data/backups/` and retained for 7 days.
 The backups are standard SQLite files created via `VACUUM INTO`.
 
 To restore:
 1. Stop the containers: `docker compose down`
 2. Backup the current broken DB: `mv data/portfoliopi.db data/portfoliopi.db.broken`
-3. Copy the desired backup: `cp data/backups/portfoliopi_backup_YYYYMMDD_0200.db data/portfoliopi.db`
+3. Copy the desired backup: `cp data/backups/portfoliopi_YYYYMMDD.db data/portfoliopi.db`
 4. Restart the containers: `docker compose up -d`
 
 ## Troubleshooting
 
 - **Bot container shows unhealthy**: The Docker healthcheck ensures a data refresh pipeline has succeeded in the last 24 hours by checking `job_heartbeats`. Check the "Session Status" dashboard page or run `/status` in Telegram. If no jobs ran, your session token may be expired.
-- **Session token expired**: Follow the Daily Session Refresh flow (login via the Dashboard).
-- **Dashboard shows stale data**: The dashboard relies on background jobs. If you click a "Refresh" button on the dashboard or send `/refresh` in Telegram, it queues a request in `refresh_requests`. The bot container polls this table every 60 seconds. If data isn't updating, check the bot container logs (`docker logs portfoliopi-bot`) to confirm the polling job is running and processing the request.
+- **Session token expired**: Follow the Daily Session Refresh flow (Telegram `/refresh_session` command).
+- **Dashboard shows stale data**: The dashboard relies on background jobs. If you click a "Refresh" button on the dashboard, it queues a request in `refresh_requests`. The bot container polls this table every 60 seconds. If data isn't updating, check the bot container logs (`docker logs portfoliopi-bot`) to confirm the polling job is running and processing the request.

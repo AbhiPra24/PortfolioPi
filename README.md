@@ -55,9 +55,9 @@ A Streamlit dashboard, algorithmic screener, and Telegram bot for your ICICI Dir
 ## Daily Session Flow
 
 ICICI Breeze requires a daily manual login to generate a session token:
-1. Log into the local Dashboard (port 8653) and open the **Session Status** page.
-2. Click the login link, authenticate with ICICI, and paste the resulting token URL back into the Dashboard to save your session.
-3. Alternatively, you can send the token directly to the Telegram bot using `/refresh_session <TOKEN>`.
+1. Visit `https://api.icicidirect.com/apiuser/login?api_key=YOUR_API_KEY` in your browser.
+2. Log in and copy the `apisession` token from the resulting URL.
+3. Send this to the bot on Telegram: `/refresh_session <TOKEN>`.
 
 ## Bot Commands
 
