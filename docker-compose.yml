@@ -35,7 +35,7 @@ services:
     volumes:
       - ./data:/app/data:ro
     ports:
-      - "8653:8501"
+      - "0.0.0.0:8653:8501"
     environment:
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-admin}
     healthcheck:
