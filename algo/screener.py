@@ -1,3 +1,5 @@
+"""Tactical screener execution pipeline for daily technical setups."""
+
 import aiosqlite
 import pandas as pd
 

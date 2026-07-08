@@ -1,3 +1,5 @@
+"""Minervini Trend Template (7-point structural uptrend checklist)."""
+
 import pandas as pd
 
 def check_trend_template(df: pd.DataFrame) -> int:

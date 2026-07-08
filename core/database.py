@@ -1,3 +1,5 @@
+"""SQLite database initialization and connection utilities."""
+
 import logging
 
 import aiosqlite

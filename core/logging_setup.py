@@ -1,3 +1,5 @@
+"""Centralized logging configuration for the bot and web dashboard."""
+
 import logging
 import os
 from logging.handlers import RotatingFileHandler

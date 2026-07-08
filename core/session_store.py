@@ -1,3 +1,5 @@
+"""Manages ICICI Breeze API token persistence and retrieval."""
+
 import logging
 
 import aiosqlite

@@ -1,3 +1,5 @@
+"""Formats raw data and algorithm outputs into readable Telegram messages."""
+
 def format_portfolio_message(holdings: list) -> str:
     if not holdings:
         return "Your portfolio is currently empty or hasn't been fetched."

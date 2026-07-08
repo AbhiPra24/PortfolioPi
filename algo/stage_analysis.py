@@ -1,3 +1,5 @@
+"""Weinstein Stage Analysis classification (Stage 1-4)."""
+
 import pandas as pd
 
 def classify_stage(df: pd.DataFrame) -> dict:

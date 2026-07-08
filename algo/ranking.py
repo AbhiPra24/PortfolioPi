@@ -1,3 +1,5 @@
+"""Composite scoring and ranking for tactical screener setups."""
+
 def calculate_composite_score(rsi14, macd_line, macd_signal, current_price, sma50, sma200, pct_from_52w, vol_ratio):
     score = 0
     # RSI between 40 and 60 is bullish momentum building

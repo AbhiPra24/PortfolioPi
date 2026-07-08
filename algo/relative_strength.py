@@ -1,3 +1,5 @@
+"""IBD-style Relative Strength scoring against the Nifty 50."""
+
 import sqlite3
 import pandas as pd
 from app_config import settings

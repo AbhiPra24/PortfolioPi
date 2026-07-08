@@ -1,3 +1,5 @@
+"""Technical indicators (RSI, MACD, SMA) for short-term and structural analysis."""
+
 import pandas as pd
 
 

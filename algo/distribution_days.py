@@ -1,3 +1,5 @@
+"""O'Neil distribution-day counting for institutional selling pressure."""
+
 import pandas as pd
 
 def count_distribution_days(df: pd.DataFrame) -> dict:

@@ -1,3 +1,5 @@
+"""Telegram bot middleware for user authentication and authorization."""
+
 from functools import wraps
 
 from telegram import Update

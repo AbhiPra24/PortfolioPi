@@ -1,3 +1,5 @@
+"""Telegram bot command handlers for processing user requests."""
+
 import logging
 
 import aiosqlite

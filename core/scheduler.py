@@ -1,3 +1,5 @@
+"""Background APScheduler for daily data refresh and nightly database backups."""
+
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

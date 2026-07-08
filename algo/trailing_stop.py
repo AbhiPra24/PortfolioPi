@@ -1,3 +1,5 @@
+"""Chandelier Exit risk-management stop-loss calculation."""
+
 import pandas as pd
 import numpy as np
 

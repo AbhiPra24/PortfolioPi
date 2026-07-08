@@ -1,3 +1,5 @@
+"""Historical backtesting engine for validating the portfolio action classifier."""
+
 import aiosqlite
 import pandas as pd
 

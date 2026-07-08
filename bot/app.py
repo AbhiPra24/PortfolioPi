@@ -1,3 +1,5 @@
+"""Telegram bot initialization and long-polling entry point."""
+
 from telegram.ext import Application, CommandHandler
 
 from app_config import settings

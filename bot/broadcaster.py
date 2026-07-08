@@ -1,3 +1,5 @@
+"""Utility for broadcasting proactive messages to authorized Telegram users."""
+
 import logging
 import os
 

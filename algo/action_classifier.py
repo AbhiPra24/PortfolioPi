@@ -1,3 +1,5 @@
+"""Synthesizes structural algorithms into actionable portfolio guidance."""
+
 import pandas as pd
 from algo.relative_strength import compute_relative_strength
 from algo.stage_analysis import classify_stage

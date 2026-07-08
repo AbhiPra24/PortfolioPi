@@ -1,3 +1,5 @@
+"""Daily automated pipeline for backfilling OHLCV, evaluating signals, and broadcasting digests."""
+
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -112,10 +114,10 @@ async def run_refresh_pipeline(app=None):
                         try:
                             from_date_dt = dateutil.parser.parse(max_date)
                         except Exception:
-                            from_date_dt = to_date_dt - timedelta(days=1095)
+                            from_date_dt = to_date_dt - timedelta(days=365)
                     from_date_dt += timedelta(days=1)
                 else:
-                    from_date_dt = to_date_dt - timedelta(days=1095)
+                    from_date_dt = to_date_dt - timedelta(days=365)
 
                 if from_date_dt > to_date_dt:
                     continue

@@ -1,3 +1,5 @@
+"""Read-only wrapper for the ICICI Direct Breeze API."""
+
 from breeze_connect import BreezeConnect
 
 from app_config import settings
