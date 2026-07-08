@@ -15,16 +15,22 @@ def classify_stage(df: pd.DataFrame) -> dict:
     
     stage = 0
     # Basic logic
-    if slope > 0.02 and current_close > current_sma_150:
-        stage = 2
-    elif slope < -0.02 and current_close < current_sma_150:
-        stage = 4
-    elif slope <= 0.02 and slope >= -0.02:
+    if slope > 0.02:
+        # Rising SMA
+        if current_close > current_sma_150:
+            stage = 2
+        else:
+            stage = 2 # Pullback within Stage 2
+    elif slope < -0.02:
+        # Falling SMA
+        if current_close < current_sma_150:
+            stage = 4
+        else:
+            stage = 4 # Early warning / rally within Stage 4
+    else: # slope between -0.02 and 0.02
         if current_close > current_sma_150:
             stage = 1
         else:
             stage = 3
-    else:
-        stage = 0 # Undefined
 
     return {"stage": stage, "sma_150": current_sma_150, "slope": slope}

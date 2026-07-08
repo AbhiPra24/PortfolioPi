@@ -3,7 +3,7 @@ import pandas as pd
 from app_config import settings
 
 def compute_relative_strength(stock_df: pd.DataFrame, nifty_df: pd.DataFrame):
-    if len(stock_df) < 252 or len(nifty_df) < 252:
+    if len(stock_df) < 200 or len(nifty_df) < 200:
         return 0.0
 
     stock_df = stock_df.sort_values('date').reset_index(drop=True)
@@ -11,7 +11,7 @@ def compute_relative_strength(stock_df: pd.DataFrame, nifty_df: pd.DataFrame):
 
     # Align dates
     df = pd.merge(stock_df[['date', 'close']], nifty_df[['date', 'close']], on='date', suffixes=('_stock', '_idx'))
-    if len(df) < 252:
+    if len(df) < 200:
         return 0.0
     
     current_stock = df['close_stock'].iloc[-1]

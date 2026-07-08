@@ -33,7 +33,7 @@ async def run_backtest(db_path=None):
         for stock in stocks:
             async with db.execute("SELECT date, close, open, high, low, volume FROM ohlcv_cache WHERE stock_code = ? ORDER BY date ASC", (stock,)) as cur:
                 data = await cur.fetchall()
-                if len(data) < 253:
+                if len(data) < 201:
                     continue
 
                 df = pd.DataFrame(data, columns=['date', 'close', 'open', 'high', 'low', 'volume'])
@@ -41,7 +41,7 @@ async def run_backtest(db_path=None):
                     df[col] = df[col].astype(float)
 
                 # Replay scoring logic
-                for i in range(252, len(df)):
+                for i in range(200, len(df)):
                     row = df.iloc[i]
                     current_date = row['date']
                     
@@ -49,7 +49,7 @@ async def run_backtest(db_path=None):
                     stock_slice = df.iloc[:i+1]
                     nifty_slice = nifty_df[nifty_df['date'] <= current_date]
                     
-                    if len(nifty_slice) < 252:
+                    if len(nifty_slice) < 200:
                         continue
 
                     # Test as if we are holding it to see SELL signals, or test as if we aren't to see BUY signals
@@ -57,20 +57,21 @@ async def run_backtest(db_path=None):
                     res = get_stock_action(stock, stock_slice, nifty_slice, is_holding=False)
                     action = res['action']
 
-                    if "BUY" in action:
-                        ret_5d = (df['close'].iloc[i+5] / row['close']) - 1 if i+5 < len(df) else None
-                        ret_10d = (df['close'].iloc[i+10] / row['close']) - 1 if i+10 < len(df) else None
-                        ret_20d = (df['close'].iloc[i+20] / row['close']) - 1 if i+20 < len(df) else None
+                    action = res['action']
 
-                        results.append({
-                            'stock_code': stock,
-                            'date': current_date,
-                            'action': action,
-                            'rationale': res['rationale'],
-                            'fwd_ret_5d': ret_5d,
-                            'fwd_ret_10d': ret_10d,
-                            'fwd_ret_20d': ret_20d
-                        })
+                    ret_5d = (df['close'].iloc[i+5] / row['close']) - 1 if i+5 < len(df) else None
+                    ret_10d = (df['close'].iloc[i+10] / row['close']) - 1 if i+10 < len(df) else None
+                    ret_20d = (df['close'].iloc[i+20] / row['close']) - 1 if i+20 < len(df) else None
+
+                    results.append({
+                        'stock_code': stock,
+                        'date': current_date,
+                        'action': action,
+                        'rationale': res['rationale'],
+                        'fwd_ret_5d': ret_5d,
+                        'fwd_ret_10d': ret_10d,
+                        'fwd_ret_20d': ret_20d
+                    })
 
     return pd.DataFrame(results)
 

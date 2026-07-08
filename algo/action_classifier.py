@@ -6,7 +6,7 @@ from algo.distribution_days import count_distribution_days
 from algo.trailing_stop import calculate_chandelier_exit
 
 def get_stock_action(stock_code: str, stock_df: pd.DataFrame, nifty_df: pd.DataFrame, is_holding: bool) -> dict:
-    if len(stock_df) < 252 or len(nifty_df) < 252:
+    if len(stock_df) < 200 or len(nifty_df) < 200:
         return {"action": "HOLD", "rationale": "Insufficient data"}
 
     rs_score = compute_relative_strength(stock_df, nifty_df)
