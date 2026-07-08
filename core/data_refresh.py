@@ -26,18 +26,18 @@ def get_historical_with_retry(breeze, stock_code, from_date, to_date):
         product_type="cash"
     )
 
-async def run_refresh_pipeline(app):
+async def run_refresh_pipeline(app=None):
     logger.info("Starting run_refresh_pipeline")
     try:
         token = await get_session()
         if not token:
-            await broadcast_message(app, "🚨 Data Refresh Failed: Session missing. Please login again.")
+            if app: await broadcast_message(app, "🚨 Data Refresh Failed: Session missing. Please login again.")
             return
 
         try:
             breeze = BreezeClient(token)
         except SessionExpiredError:
-            await broadcast_message(app, "🚨 Data Refresh Failed: Session expired. Please login again.")
+            if app: await broadcast_message(app, "🚨 Data Refresh Failed: Session expired. Please login again.")
             return
 
         async with aiosqlite.connect(settings.db_path) as db:
@@ -54,7 +54,7 @@ async def run_refresh_pipeline(app):
                             "stock_code": stock,
                             "quantity": int(item.get("quantity", 0) or 0),
                             "average_price": float(item.get("average_price", 0) or 0),
-                            "current_price": float(item.get("current_price", 0) or item.get("average_price", 0) or 0)
+                            "current_price": float(item.get("current_market_price", 0) or item.get("current_price", 0) or item.get("average_price", 0) or 0)
                         }
             if isinstance(port_holdings, dict) and port_holdings.get("Success"):
                 for item in port_holdings.get("Success", []):
@@ -63,14 +63,14 @@ async def run_refresh_pipeline(app):
                         if stock in holdings_data:
                             holdings_data[stock]["quantity"] += int(item.get("quantity", 0) or 0)
                             holdings_data[stock]["average_price"] = float(item.get("average_price", 0) or holdings_data[stock]["average_price"])
-                            if float(item.get("current_price", 0) or 0) > 0:
-                                holdings_data[stock]["current_price"] = float(item.get("current_price", 0))
+                            if float(item.get("current_market_price", 0) or item.get("current_price", 0) or 0) > 0:
+                                holdings_data[stock]["current_price"] = float(item.get("current_market_price", 0) or item.get("current_price", 0))
                         else:
                             holdings_data[stock] = {
                                 "stock_code": stock,
                                 "quantity": int(item.get("quantity", 0) or 0),
                                 "average_price": float(item.get("average_price", 0) or 0),
-                                "current_price": float(item.get("current_price", 0) or item.get("average_price", 0) or 0)
+                                "current_price": float(item.get("current_market_price", 0) or item.get("current_price", 0) or item.get("average_price", 0) or 0)
                             }
 
             if holdings_data:
@@ -158,7 +158,7 @@ async def run_refresh_pipeline(app):
             sig_msg = format_signals_message(signals)
 
             digest = f"{port_msg}\n\n{sig_msg}"
-            await broadcast_message(app, digest)
+            if app: await broadcast_message(app, digest)
 
             # 6. Record heartbeat on complete success
             await db.execute("INSERT INTO job_heartbeats (job_name) VALUES (?)", ("run_refresh_pipeline",))
@@ -166,4 +166,4 @@ async def run_refresh_pipeline(app):
 
     except Exception as e:
         logger.exception("Error in run_refresh_pipeline")
-        await broadcast_message(app, f"🚨 Unhandled Error in data refresh pipeline:\n{str(e)}")
+        if app: await broadcast_message(app, f"🚨 Unhandled Error in data refresh pipeline:\n{str(e)}")

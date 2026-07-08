@@ -31,7 +31,7 @@ class BreezeClient:
         return self.breeze.get_historical_data_v2(*args, **kwargs)
 
     def get_portfolio_holding(self, *args, **kwargs):
-        return self.breeze.get_portfolio_holding(*args, **kwargs)
+        return self.breeze.get_portfolio_holdings(*args, **kwargs)
 
     def get_portfolio_position(self, *args, **kwargs):
         return self.breeze.get_portfolio_position(*args, **kwargs)
