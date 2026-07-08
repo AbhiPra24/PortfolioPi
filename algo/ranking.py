@@ -20,5 +20,5 @@ def calculate_composite_score(rsi14, macd_line, macd_signal, current_price, sma5
     # Volume spike > 1.5x
     if vol_ratio > 1.5:
         score += 10
-        
+
     return score

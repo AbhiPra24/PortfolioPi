@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 from bot.app import create_app
 from core.database import init_db
 from core.scheduler import start_scheduler
@@ -13,7 +14,7 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    
+
     # Run forever
     stop_signal = asyncio.Event()
     await stop_signal.wait()

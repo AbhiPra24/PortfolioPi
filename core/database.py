@@ -1,5 +1,7 @@
-import aiosqlite
 import logging
+
+import aiosqlite
+
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -8,25 +10,25 @@ async def init_db():
     logger.info("Initializing SQLite DB in WAL mode...")
     async with aiosqlite.connect(settings.db_path) as db:
         await db.execute("PRAGMA journal_mode=WAL;")
-        
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS holdings_snapshot (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                stock_code TEXT,
+                stock_code TEXT UNIQUE,
                 quantity INTEGER,
                 average_price REAL,
                 current_price REAL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 stock_code TEXT UNIQUE
             )
         """)
-        
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS ohlcv_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,7 +42,7 @@ async def init_db():
                 UNIQUE(stock_code, date)
             )
         """)
-        
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS signals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +58,7 @@ async def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS job_heartbeats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +66,7 @@ async def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS session_tokens (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,5 +74,5 @@ async def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         await db.commit()

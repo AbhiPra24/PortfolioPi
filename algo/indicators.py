@@ -1,5 +1,5 @@
 import pandas as pd
-import numpy as np
+
 
 def calculate_rsi(series: pd.Series, period=14) -> float:
     delta = series.diff()
@@ -23,8 +23,8 @@ def calculate_sma(series: pd.Series, period: int) -> float:
     return sma.iloc[-1] if not sma.empty and not pd.isna(sma.iloc[-1]) else 0.0
 
 def proximity_to_52w_high(current_price: float, high_52w: float) -> float:
-    if high_52w == 0 or pd.isna(high_52w):
-        return 0.0
+    if high_52w is None or pd.isna(high_52w) or high_52w == 0:
+        return None
     return ((high_52w - current_price) / high_52w) * 100.0
 
 def volume_spike(current_volume: int, volume_series: pd.Series, period=20) -> float:

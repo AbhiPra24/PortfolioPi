@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   bot:
     build:
@@ -7,6 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: portfoliopi-bot
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     env_file:
       - .env
     volumes:
@@ -24,10 +27,15 @@ services:
       dockerfile: dashboard/Dockerfile
     container_name: portfoliopi-dashboard
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
     volumes:
       - ./data:/app/data:ro
     ports:
-      - "127.0.0.1:8501:8501"
+      - "127.0.0.1:8653:8501"
     environment:
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-admin}
     healthcheck:

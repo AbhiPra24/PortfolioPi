@@ -1,6 +1,7 @@
-import sqlite3
-import streamlit as st
 import os
+import sqlite3
+
+import streamlit as st
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "portfoliopi.db")
 
@@ -9,6 +10,9 @@ def get_db_connection():
     # URI mode=ro requires uri=True
     uri = f"file:{DB_PATH}?mode=ro"
     return sqlite3.connect(uri, uri=True, check_same_thread=False)
+
+def get_writable_db_connection():
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 def query_db(query, args=(), one=False):
     conn = get_db_connection()
@@ -20,3 +24,14 @@ def query_db(query, args=(), one=False):
     except sqlite3.OperationalError as e:
         st.error(f"DB Error: {e}")
         return None
+
+def execute_db(query, args=()):
+    conn = get_writable_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(query, args)
+        conn.commit()
+    except sqlite3.Error as e:
+        st.error(f"DB Error: {e}")
+    finally:
+        conn.close()

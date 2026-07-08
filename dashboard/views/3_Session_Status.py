@@ -1,5 +1,5 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 from db import query_db
 
 st.header("System & Session Status")

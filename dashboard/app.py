@@ -1,14 +1,17 @@
-import streamlit as st
 import os
+
+import streamlit as st
 
 st.set_page_config(page_title="PortfolioPi", layout="wide")
 
-password = os.getenv("DASHBOARD_PASSWORD", "admin")
+password = os.getenv("DASHBOARD_PASSWORD")
+if not password:
+    raise ValueError("DASHBOARD_PASSWORD environment variable is not set")
 
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
-        
+
     if not st.session_state["authenticated"]:
         st.title("Login")
         pwd = st.text_input("Password", type="password")
@@ -23,7 +26,7 @@ def check_password():
 
 if check_password():
     st.title("PortfolioPi")
-    
+
     pages = {
         "Menu": [
             st.Page("views/0_Portfolio.py", title="Portfolio"),

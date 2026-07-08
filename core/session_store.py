@@ -1,6 +1,8 @@
-import aiosqlite
-from config import settings
 import logging
+
+import aiosqlite
+
+from config import settings
 
 logger = logging.getLogger(__name__)
 

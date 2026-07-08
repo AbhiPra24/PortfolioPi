@@ -1,17 +1,17 @@
-import os
 from typing import List
-from pydantic_settings import BaseSettings
+
 from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
-    api_key: SecretStr = SecretStr("dummy")
-    api_secret: SecretStr = SecretStr("dummy")
-    telegram_bot_token: SecretStr = SecretStr("dummy")
-    telegram_owner_ids: str = "123" # comma separated if needed, simplifying for now
+    api_key: SecretStr
+    api_secret: SecretStr
+    telegram_bot_token: SecretStr
+    telegram_owner_ids: str
     db_path: str = "data/portfoliopi.db"
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
     @property
     def owner_ids_list(self) -> List[int]:
