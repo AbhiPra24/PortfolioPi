@@ -57,6 +57,6 @@ if signals:
     df = pd.DataFrame(signals, columns=[
         'Stock', 'RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score', 'Timestamp'
     ])
-    st.dataframe(df.style.background_gradient(subset=['Score'], cmap='Greens'), use_container_width=True)
+    st.dataframe(df, use_container_width=True)
 else:
     st.info("No signals generated yet.")
