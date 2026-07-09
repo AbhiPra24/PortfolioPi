@@ -15,7 +15,6 @@ from bot.formatters import format_portfolio_message, format_signals_message
 from app_config import settings
 from core.breeze_client import BreezeClient, SessionExpiredError
 from core.session_store import get_session
-from core.market_data import get_market_data
 
 logger = logging.getLogger(__name__)
 
