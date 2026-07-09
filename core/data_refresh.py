@@ -186,6 +186,8 @@ async def run_breeze_sync(app=None, silent=True):
                             await db.commit()
                 except Exception as e:
                     logger.error(f"Failed to fetch historical data for {ticker}: {e}")
+                    await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'breeze', 'failed', ?)", (ticker, str(e)))
+                    await db.commit()
 
                 await asyncio.sleep(1)
 
@@ -262,7 +264,12 @@ async def run_market_data_refresh(app=None, send_digest=False):
                 max_date = max_date_row[0] if max_date_row and max_date_row[0] else None
 
                 if max_date is None:
-                    await backfill_ticker_history(db, ticker, provider)
+                    try:
+                        await backfill_ticker_history(db, ticker, provider)
+                    except Exception as e:
+                        logger.error(f"yfinance backfill failed for {ticker}: {e}")
+                        await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'yfinance', 'failed', ?)", (ticker, str(e)))
+                        await db.commit()
                 else:
                     try:
                         from_dt = datetime.strptime(max_date[:10], "%Y-%m-%d")
@@ -271,8 +278,13 @@ async def run_market_data_refresh(app=None, send_digest=False):
                     from_dt += timedelta(days=1)
                     to_dt = datetime.now()
                     if from_dt <= to_dt:
-                        rows = await asyncio.to_thread(provider.get_historical_ohlcv, ticker, from_dt, to_dt)
-                        await _normalize_and_upsert_ohlcv(db, ticker, rows)
+                        try:
+                            rows = await asyncio.to_thread(provider.get_historical_ohlcv, ticker, from_dt, to_dt)
+                            await _normalize_and_upsert_ohlcv(db, ticker, rows)
+                        except Exception as e:
+                            logger.error(f"yfinance fetch failed for {ticker}: {e}")
+                            await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'yfinance', 'failed', ?)", (ticker, str(e)))
+                            await db.commit()
 
                 # Keep current_price fresh for the Portfolio auto-refresh (holdings only).
                 if ticker in holdings:

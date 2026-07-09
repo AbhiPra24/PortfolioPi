@@ -25,6 +25,7 @@ with col1:
                 new_stock = new_stock.strip().upper()
                 if new_stock not in watchlist:
                     execute_db("INSERT INTO watchlist (stock_code) VALUES (?)", (new_stock,))
+                    execute_db("INSERT INTO backfill_requests (stock_code) VALUES (?)", (new_stock,))
                     st.success(f"Added {new_stock} to watchlist!")
                     st.rerun()
                 else:

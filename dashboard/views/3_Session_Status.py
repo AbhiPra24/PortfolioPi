@@ -31,3 +31,10 @@ if heartbeats:
     st.table(df)
 else:
     st.info("No jobs have run yet.")
+
+st.subheader("Data Health (recent failures)")
+health = query_db("SELECT stock_code, source, status, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 20")
+if health:
+    st.dataframe(pd.DataFrame(health, columns=['Stock', 'Source', 'Status', 'Message', 'Timestamp']), use_container_width=True)
+else:
+    st.success("No recent data-fetch failures.")

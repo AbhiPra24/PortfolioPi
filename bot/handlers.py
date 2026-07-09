@@ -126,7 +126,19 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await db.execute("INSERT INTO watchlist (stock_code) VALUES (?)", (ticker,))
                 await db.commit()
-                await update.message.reply_text(f"Added <code>{ticker}</code> to watchlist.", parse_mode='HTML')
+                await update.message.reply_text(f"Added <code>{ticker}</code> to watchlist. Starting backfill...", parse_mode='HTML')
+                
+                async def run_backfill():
+                    from core.providers import YFinanceProvider
+                    from core.data_refresh import backfill_ticker_history
+                    async with aiosqlite.connect(settings.db_path) as conn:
+                        try:
+                            await backfill_ticker_history(conn, ticker, YFinanceProvider())
+                        except Exception as e:
+                            logger.error(f"Watchlist add background backfill failed for {ticker}: {e}")
+                
+                import asyncio
+                asyncio.create_task(run_backfill())
             except aiosqlite.IntegrityError:
                 await update.message.reply_text(f"<code>{ticker}</code> is already in watchlist.", parse_mode='HTML')
 
@@ -192,6 +204,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT timestamp FROM session_tokens LIMIT 1") as cur:
             session_row = await cur.fetchone()
 
+        async with db.execute("SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5") as cur:
+            failures = await cur.fetchall()
+
     msg = "<b>System Status</b>\n\n"
 
     if session_row:
@@ -205,6 +220,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"- <code>{hb[0]}</code>: {hb[1]}\n"
     else:
         msg += "No recent heartbeats found.\n"
+
+    msg += "\n<b>Recent Data Health Issues:</b>\n"
+    if failures:
+        for f in failures:
+            msg += f"- ⚠️ <code>{f[0]}</code> ({f[1]}): {f[2]} at {f[3]}\n"
+    else:
+        msg += "No recent data-fetch failures.\n"
 
     await update.message.reply_text(msg, parse_mode='HTML')
 
