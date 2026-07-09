@@ -72,12 +72,11 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
         details = breeze.get_customer_details()
         if details.get("Success"):
             await save_session(token)
-            await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>", parse_mode='HTML')
+            await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.", parse_mode='HTML')
             
-            # Run Breeze sync immediately inline
             from core.data_refresh import run_breeze_sync
-            # The run_breeze_sync method itself broadcasts the summary message on success if silent=False
-            await run_breeze_sync(context.application, silent=False)
+            import asyncio
+            asyncio.create_task(run_breeze_sync(context.application, silent=False))
         else:
             await update.message.reply_text(f"<b>Failed to validate token.</b> API Response: {details.get('Error', 'Unknown error')}", parse_mode='HTML')
     except Exception as e:
