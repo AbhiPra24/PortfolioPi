@@ -24,5 +24,12 @@ This structural engine answers the question: "What should I do with the stocks I
 
 These modules are synthesized in `algo/action_classifier.py` to produce actionable, human-readable portfolio guidance.
 
+## 3. Portfolio-Level Analytics (`algo/portfolio_analytics.py`)
+This layer aggregates individual stock signals and actions to provide portfolio-level risk and diversification diagnostics:
+
+- **Concentration Risk**: Computes the percentage of the portfolio held by the top $N$ positions to flag over-concentration in single names.
+- **Weinstein Stage Health Rollup**: Aggregates and counts Stage Analysis classifications across all holdings to show the overall stage health of the portfolio.
+- **Beta vs Nifty 50**: Calculates the 252-day trailing beta (covariance of stock returns and Nifty returns divided by Nifty variance) for each holding to quantify systematic market risk and correlation.
+
 ### ⚠️ Known Limitations
 **Preliminary Backtest Constraints**: The backtest validating the Portfolio Action Classification Engine initially ran with only ~46 trading days of usable history (until the deeper backfill was completed). Consequently, the BUY-signal forward-return figures (-2.1% mean 20-day return in early tests) should be treated as preliminary and unvalidated until run across a statistically significant multi-year market cycle encompassing various regimes.

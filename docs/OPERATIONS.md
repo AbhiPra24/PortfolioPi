@@ -30,6 +30,26 @@ To restore:
 3. Copy the desired backup: `cp data/backups/portfoliopi_YYYYMMDD.db data/portfoliopi.db`
 4. Restart the containers: `docker compose up -d`
 
+## Data Ingestion & Refresh Architecture
+
+### Two-Pipeline Model
+PortfolioPi splits its data operations into two pipelines to balance accuracy and uptime:
+1. **Breeze Ground-Truth Sync (`run_breeze_sync`)**:
+   - **Trigger**: Daily cron (8:00 AM IST) and manual "Refresh Now" dashboard requests.
+   - **Uptime dependence**: Requires a fresh Breeze session token (updated daily).
+   - **Scope**: Fetches Demat/Portfolio holdings, updates `quantity` and `average_price`, and performs an incremental daily OHLCV backfill from Breeze.
+2. **Market Data Refresh (`run_market_data_refresh`)**:
+   - **Trigger**: Every 60 minutes, 24/7.
+   - **Uptime dependence**: Unauthenticated yfinance API. Runs even if Breeze session token is expired or missing.
+   - **Scope**: Fetches recent quotes and daily candles from `yfinance`, updates `current_price` in `holdings_snapshot`, appends new daily OHLCV rows to `ohlcv_cache`, runs technical indicator generation, and computes buy/sell verdicts.
+
+### Watchlist Auto-Backfill
+When a new ticker is added to the watchlist (via dashboard or Telegram):
+1. A backfill request is queued in the `backfill_requests` table.
+2. The background scheduler checks this queue every 20 seconds.
+3. It fetches 3 years (1,095 days) of daily OHLCV candles via `yfinance` to seed the cache immediately.
+4. Screener signals and Stage verdicts become active immediately instead of waiting for a daily sync cycle.
+
 ## Troubleshooting
 
 - **Bot container shows unhealthy**: The Docker healthcheck ensures a data refresh pipeline has succeeded in the last 24 hours by checking `job_heartbeats`. Check the "Session Status" dashboard page or run `/status` in Telegram. If no jobs ran, your session token may be expired.
