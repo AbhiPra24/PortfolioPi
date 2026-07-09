@@ -139,4 +139,23 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio_value_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                total_invested REAL,
+                total_current_value REAL,
+                total_pnl REAL
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS stock_metadata (
+                stock_code TEXT PRIMARY KEY,
+                sector TEXT,
+                industry TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         await db.commit()

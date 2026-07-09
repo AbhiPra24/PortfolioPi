@@ -100,6 +100,17 @@ async def run_breeze_sync(app=None, silent=True):
                     """, (stock, data["quantity"], data["average_price"]))
                 await db.commit()
 
+                # Record portfolio history (invested vs current value)
+                async with db.execute("SELECT SUM(quantity * average_price), SUM(quantity * current_price) FROM holdings_snapshot") as cur:
+                    totals_row = await cur.fetchone()
+                if totals_row and totals_row[0] is not None:
+                    total_invested, total_current = totals_row[0], totals_row[1]
+                    await db.execute("""
+                        INSERT INTO portfolio_value_history (total_invested, total_current_value, total_pnl)
+                        VALUES (?, ?, ?)
+                    """, (total_invested, total_current, total_current - total_invested))
+                    await db.commit()
+
             # 2. Fetch Watchlist
             async with db.execute("SELECT stock_code FROM watchlist") as cursor:
                 watchlist = [row[0] for row in await cursor.fetchall()]

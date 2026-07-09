@@ -34,6 +34,7 @@ if check_password():
             st.Page("views/2_Historical_Charts.py", title="Historical Charts"),
             st.Page("views/3_Session_Status.py", title="Session Status"),
             st.Page("views/4_Action_Plan.py", title="Action Plan"),
+            st.Page("views/5_Portfolio_Analyser.py", title="Portfolio Analyser"),
         ]
     }
     pg = st.navigation(pages)
