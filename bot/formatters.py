@@ -21,7 +21,7 @@ def format_portfolio_message(holdings: list) -> str:
         msg += f"- <code>{h.get('stock_code')}</code>: {h.get('quantity')} shs @ ₹{h.get('average_price', 0):.2f} (Val: ₹{val:,.2f})\n"
     return msg
 
-def format_signals_message(signals: list) -> str:
+def format_signals_message(signals: list, actions_by_stock=None) -> str:
     if not signals:
         return "No signals generated for today."
 
@@ -44,8 +44,23 @@ def format_signals_message(signals: list) -> str:
         sma200_str = f"{sma200:.1f}" if sma200 is not None else "N/A"
         pct_str = f"{pct_52w:.1f}" if pct_52w is not None else "N/A"
         
-        msg += f"<b>{stock}</b> (Score: {score_str})\n"
+        verdict_str = ""
+        if actions_by_stock and stock in actions_by_stock:
+            verdict_str = f" — <b>{actions_by_stock[stock]}</b>"
+            
+        msg += f"<b>{stock}</b> (Score: {score_str}){verdict_str}\n"
         msg += f"  RSI: {rsi_str} | Vol Spike: {vol_str}x\n"
         msg += f"  SMA50: {sma50_str} | SMA200: {sma200_str}\n"
         msg += f"  52w Dist: {pct_str}%\n\n"
     return msg
+
+def format_stock_analysis_message(ticker, signal_row, action_row, quote):
+    lines = [f"<b>{ticker} Analysis</b>"]
+    if quote:
+        lines.append(f"Price: ₹{quote['ltp']:.2f}" + (f" ({quote['change']:+.2f})" if quote.get('change') is not None else ""))
+    if signal_row:
+        lines.append(f"RSI(14): {signal_row['rsi14']:.1f} | MACD: {signal_row['macd_line']:.2f}/{signal_row['macd_signal']:.2f}")
+        lines.append(f"SMA50/200: {signal_row['sma50']:.2f}/{signal_row['sma200']:.2f} | Score: {signal_row['composite_score']:.0f}")
+    if action_row:
+        lines.append(f"\n<b>Verdict: {action_row['action']}</b>\n<i>{action_row['rationale']}</i>")
+    return "\n".join(lines)

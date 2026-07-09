@@ -15,6 +15,7 @@ from .handlers import (
     status_command,
     watchlist_command,
     action_plan_command,
+    analyse_command,
 )
 
 
@@ -30,6 +31,7 @@ def create_app() -> Application:
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("refresh_session", refresh_session_command))
     app.add_handler(CommandHandler("action_plan", action_plan_command))
+    app.add_handler(CommandHandler("analyse", analyse_command))
     app.add_handler(CommandHandler("help", help_command))
 
     return app

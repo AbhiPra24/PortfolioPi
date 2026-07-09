@@ -243,6 +243,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/funds - View available funds\n"
         "/status - View system status\n"
         "/refresh_session &lt;token&gt; - Update Breeze API session\n"
+        "/analyse &lt;TICKER&gt; - Get technicals and action guidance\n"
         "/help - Show this message"
     )
     await update.message.reply_text(help_text, parse_mode='HTML')
@@ -265,4 +266,34 @@ async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(msg) > 4000:
         msg = msg[:4000] + "\n... (truncated)"
         
+    await update.message.reply_text(msg, parse_mode='HTML')
+
+@owner_only
+async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /analyse <TICKER>", parse_mode='HTML')
+        return
+    ticker = context.args[0].upper()
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM signals WHERE stock_code = ? ORDER BY timestamp DESC LIMIT 1", (ticker,)) as cur:
+            signal_row = await cur.fetchone()
+        async with db.execute("SELECT * FROM stock_actions WHERE stock_code = ?", (ticker,)) as cur:
+            action_row = await cur.fetchone()
+
+    breeze = await get_breeze_client()
+    if breeze:
+        try:
+            quote = breeze.get_quotes(stock_code=ticker, exchange_code="NSE", product_type="cash")
+            quote = {"ltp": float(quote["Success"][0]["ltp"]), "change": quote["Success"][0].get("change")} if quote.get("Success") else None
+        except Exception:
+            from core.providers import YFinanceProvider
+            quote = YFinanceProvider().get_quote(ticker)
+    else:
+        from core.providers import YFinanceProvider
+        quote = YFinanceProvider().get_quote(ticker)
+
+    from .formatters import format_stock_analysis_message
+    msg = format_stock_analysis_message(ticker, signal_row, action_row, quote)
     await update.message.reply_text(msg, parse_mode='HTML')
