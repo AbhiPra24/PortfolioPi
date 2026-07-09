@@ -3,7 +3,7 @@
 import logging
 
 import aiosqlite
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from app_config import settings
@@ -297,3 +297,28 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .formatters import format_stock_analysis_message
     msg = format_stock_analysis_message(ticker, signal_row, action_row, quote)
     await update.message.reply_text(msg, parse_mode='HTML')
+
+@owner_only
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📊 Portfolio", callback_data="portfolio"), InlineKeyboardButton("📈 Signals", callback_data="signals")],
+        [InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"), InlineKeyboardButton("💰 Funds", callback_data="funds")],
+        [InlineKeyboardButton("⚙️ Status", callback_data="status")],
+    ]
+    await update.message.reply_text("Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+@owner_only
+async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    dispatch = {
+        "portfolio": portfolio_command,
+        "signals": signals_command,
+        "action_plan": action_plan_command,
+        "funds": funds_command,
+        "status": status_command,
+    }
+    handler = dispatch.get(query.data)
+    if handler:
+        update.message = query.message
+        await handler(update, context)
