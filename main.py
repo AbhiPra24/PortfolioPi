@@ -42,6 +42,10 @@ async def main():
     app = create_app()
     start_scheduler(app)
     await app.initialize()
+    
+    from bot.app import COMMANDS
+    await app.bot.set_my_commands(COMMANDS)
+    
     await app.start()
     await app.updater.start_polling()
 
