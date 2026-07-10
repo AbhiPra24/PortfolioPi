@@ -25,6 +25,7 @@ with col1:
                 new_stock = new_stock.strip().upper()
                 if new_stock not in watchlist:
                     execute_db("INSERT INTO watchlist (stock_code) VALUES (?)", (new_stock,))
+                    execute_db("INSERT INTO backfill_requests (stock_code) VALUES (?)", (new_stock,))
                     st.success(f"Added {new_stock} to watchlist!")
                     st.rerun()
                 else:
@@ -48,16 +49,19 @@ st.divider()
 
 st.subheader("Latest Technical Signals")
 signals = query_db("""
-    SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score, timestamp 
-    FROM signals 
-    WHERE composite_score IS NOT NULL
-    ORDER BY timestamp DESC, composite_score DESC LIMIT 50
+    SELECT s.stock_code, s.rsi14, s.macd_line, s.macd_signal, s.sma50, s.sma200,
+           s.pct_from_52w_high, s.volume_ratio_20d, s.composite_score, s.timestamp,
+           sa.action, sa.rationale
+    FROM signals s
+    LEFT JOIN stock_actions sa ON s.stock_code = sa.stock_code
+    WHERE s.composite_score IS NOT NULL
+    ORDER BY s.timestamp DESC, s.composite_score DESC LIMIT 50
 """)
 
 if signals:
     df = pd.DataFrame(signals, columns=[
-        'Stock', 'RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score', 'Timestamp'
+        'Stock', 'RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score', 'Timestamp', 'Action', 'Rationale'
     ])
+    for col in ['RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
     st.dataframe(df, use_container_width=True)
-else:
-    st.info("No signals generated yet.")

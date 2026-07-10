@@ -17,7 +17,7 @@ async def daily_digest_job(app: Application):
     await run_breeze_sync(app, silent=True)
     await run_market_data_refresh(app, send_digest=True)
 
-async def market_data_job(app: Application):
+async def market_data_refresh_job(app: Application):
     logger.info("Running market data refresh...")
     await run_market_data_refresh(app, send_digest=False)
 
@@ -36,6 +36,26 @@ async def process_refresh_requests_job(app: Application):
                 await db.commit()
     except Exception as e:
         logger.error(f"Error checking refresh_requests: {e}")
+
+async def process_backfill_requests_job(app: Application):
+    from core.providers import YFinanceProvider
+    from core.data_refresh import backfill_ticker_history
+    try:
+        async with aiosqlite.connect(settings.db_path) as db:
+            async with db.execute("SELECT id, stock_code FROM backfill_requests WHERE processed_at IS NULL ORDER BY requested_at ASC LIMIT 1") as cur:
+                row = await cur.fetchone()
+            if row:
+                req_id, stock_code = row
+                logger.info(f"Processing backfill request {req_id} for {stock_code}...")
+                try:
+                    n = await backfill_ticker_history(db, stock_code, YFinanceProvider())
+                    await db.execute("UPDATE backfill_requests SET processed_at = CURRENT_TIMESTAMP, status = 'ok' WHERE id = ?", (req_id,))
+                except Exception as e:
+                    await db.execute("UPDATE backfill_requests SET processed_at = CURRENT_TIMESTAMP, status = 'failed', error = ? WHERE id = ?", (str(e), req_id))
+                    await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'yfinance', 'failed', ?)", (stock_code, str(e)))
+                await db.commit()
+    except Exception as e:
+        logger.error(f"Error checking backfill_requests: {e}")
 
 async def db_backup_job():
     try:
@@ -72,10 +92,9 @@ def start_scheduler(app: Application):
     scheduler = AsyncIOScheduler()
     scheduler.add_job(daily_digest_job, 'cron', hour=8, minute=0, args=[app], timezone='Asia/Kolkata')
     
-    # Run market data refresh every 30 minutes during market hours (9:15 to 15:30) Monday to Friday
-    # Easiest way with cron:
-    scheduler.add_job(market_data_job, 'cron', day_of_week='mon-fri', hour='9-15', minute='0,30', args=[app], timezone='Asia/Kolkata')
+    scheduler.add_job(market_data_refresh_job, 'interval', minutes=60, args=[app])
     
     scheduler.add_job(db_backup_job, 'cron', hour=23, minute=30, timezone='Asia/Kolkata')
     scheduler.add_job(process_refresh_requests_job, 'interval', seconds=60, args=[app])
+    scheduler.add_job(process_backfill_requests_job, 'interval', seconds=20, args=[app])
     scheduler.start()

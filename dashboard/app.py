@@ -4,6 +4,14 @@ import streamlit as st
 
 st.set_page_config(page_title="PortfolioPi", layout="wide")
 
+from db import execute_db
+if "apisession" in st.query_params:
+    new_token = st.query_params["apisession"]
+    execute_db("DELETE FROM session_tokens")
+    execute_db("INSERT INTO session_tokens (token) VALUES (?)", (new_token,))
+    st.success(f"Successfully updated ICICI Breeze API Token from redirect!")
+    st.query_params.clear()
+
 password = os.getenv("DASHBOARD_PASSWORD")
 if not password:
     raise ValueError("DASHBOARD_PASSWORD environment variable is not set")
@@ -33,6 +41,8 @@ if check_password():
             st.Page("views/1_Watchlist_Signals.py", title="Watchlist & Signals"),
             st.Page("views/2_Historical_Charts.py", title="Historical Charts"),
             st.Page("views/3_Session_Status.py", title="Session Status"),
+            st.Page("views/4_Action_Plan.py", title="Action Plan"),
+            st.Page("views/5_Portfolio_Analyser.py", title="Portfolio Analyser"),
         ]
     }
     pg = st.navigation(pages)

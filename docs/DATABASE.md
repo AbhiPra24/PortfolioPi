@@ -57,3 +57,27 @@ The primary output of the Action Classification Engine, providing human-readable
 - **Columns**: `id` (INTEGER, PK), `stock_code` (TEXT, UNIQUE), `action` (TEXT), `rationale` (TEXT), `timestamp` (DATETIME)
 - **Written by**: `core/data_refresh.py` (cleared and repopulated daily).
 - **Read by**: `bot/formatters.py` (Action Plan alerts), Dashboard (Action Plan page).
+
+## `backfill_requests`
+A queue for asynchronously backfilling stock price history.
+- **Columns**: `id` (INTEGER, PK), `stock_code` (TEXT), `requested_at` (DATETIME), `processed_at` (DATETIME), `status` (TEXT), `error` (TEXT)
+- **Written by**: Dashboard (Watchlist & Signals page).
+- **Read by**: `core/scheduler.py` background poller.
+
+## `data_health`
+Logs data fetch errors for both Breeze and yfinance provider pipelines.
+- **Columns**: `id` (INTEGER, PK), `stock_code` (TEXT), `source` (TEXT), `status` (TEXT), `message` (TEXT), `timestamp` (DATETIME)
+- **Written by**: `core/data_refresh.py` pipelines.
+- **Read by**: Dashboard (Session Status page), Telegram `/status` command.
+
+## `portfolio_value_history`
+Tracks total invested value and current market value of holdings over time.
+- **Columns**: `id` (INTEGER, PK), `timestamp` (DATETIME), `total_invested` (REAL), `total_current_value` (REAL), `total_pnl` (REAL)
+- **Written by**: `core/data_refresh.py` Breeze sync pipeline.
+- **Read by**: Dashboard (Portfolio Analyser page).
+
+## `stock_metadata`
+Categorizes holdings and watchlist symbols by sector/industry.
+- **Columns**: `stock_code` (TEXT, PK), `sector` (TEXT), `industry` (TEXT), `updated_at` (DATETIME)
+- **Written by**: Future metadata scraper (scaffolded).
+- **Read by**: Dashboard (Portfolio Analyser page).

@@ -3,7 +3,7 @@
 import logging
 
 import aiosqlite
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from app_config import settings
@@ -72,12 +72,11 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
         details = breeze.get_customer_details()
         if details.get("Success"):
             await save_session(token)
-            await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>", parse_mode='HTML')
+            await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.", parse_mode='HTML')
             
-            # Run Breeze sync immediately inline
             from core.data_refresh import run_breeze_sync
-            # The run_breeze_sync method itself broadcasts the summary message on success if silent=False
-            await run_breeze_sync(context.application, silent=False)
+            import asyncio
+            asyncio.create_task(run_breeze_sync(context.application, silent=False))
         else:
             await update.message.reply_text(f"<b>Failed to validate token.</b> API Response: {details.get('Error', 'Unknown error')}", parse_mode='HTML')
     except Exception as e:
@@ -127,7 +126,19 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await db.execute("INSERT INTO watchlist (stock_code) VALUES (?)", (ticker,))
                 await db.commit()
-                await update.message.reply_text(f"Added <code>{ticker}</code> to watchlist.", parse_mode='HTML')
+                await update.message.reply_text(f"Added <code>{ticker}</code> to watchlist. Starting backfill...", parse_mode='HTML')
+                
+                async def run_backfill():
+                    from core.providers import YFinanceProvider
+                    from core.data_refresh import backfill_ticker_history
+                    async with aiosqlite.connect(settings.db_path) as conn:
+                        try:
+                            await backfill_ticker_history(conn, ticker, YFinanceProvider())
+                        except Exception as e:
+                            logger.error(f"Watchlist add background backfill failed for {ticker}: {e}")
+                
+                import asyncio
+                asyncio.create_task(run_backfill())
             except aiosqlite.IntegrityError:
                 await update.message.reply_text(f"<code>{ticker}</code> is already in watchlist.", parse_mode='HTML')
 
@@ -193,6 +204,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT timestamp FROM session_tokens LIMIT 1") as cur:
             session_row = await cur.fetchone()
 
+        async with db.execute("SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5") as cur:
+            failures = await cur.fetchall()
+
     msg = "<b>System Status</b>\n\n"
 
     if session_row:
@@ -206,6 +220,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"- <code>{hb[0]}</code>: {hb[1]}\n"
     else:
         msg += "No recent heartbeats found.\n"
+
+    msg += "\n<b>Recent Data Health Issues:</b>\n"
+    if failures:
+        for f in failures:
+            msg += f"- ⚠️ <code>{f[0]}</code> ({f[1]}): {f[2]} at {f[3]}\n"
+    else:
+        msg += "No recent data-fetch failures.\n"
 
     await update.message.reply_text(msg, parse_mode='HTML')
 
@@ -222,6 +243,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/funds - View available funds\n"
         "/status - View system status\n"
         "/refresh_session &lt;token&gt; - Update Breeze API session\n"
+        "/analyse &lt;TICKER&gt; - Get technicals and action guidance\n"
         "/help - Show this message"
     )
     await update.message.reply_text(help_text, parse_mode='HTML')
@@ -245,3 +267,58 @@ async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         msg = msg[:4000] + "\n... (truncated)"
         
     await update.message.reply_text(msg, parse_mode='HTML')
+
+@owner_only
+async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /analyse <TICKER>", parse_mode='HTML')
+        return
+    ticker = context.args[0].upper()
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM signals WHERE stock_code = ? ORDER BY timestamp DESC LIMIT 1", (ticker,)) as cur:
+            signal_row = await cur.fetchone()
+        async with db.execute("SELECT * FROM stock_actions WHERE stock_code = ?", (ticker,)) as cur:
+            action_row = await cur.fetchone()
+
+    breeze = await get_breeze_client()
+    if breeze:
+        try:
+            quote = breeze.get_quotes(stock_code=ticker, exchange_code="NSE", product_type="cash")
+            quote = {"ltp": float(quote["Success"][0]["ltp"]), "change": quote["Success"][0].get("change")} if quote.get("Success") else None
+        except Exception:
+            from core.providers import YFinanceProvider
+            quote = YFinanceProvider().get_quote(ticker)
+    else:
+        from core.providers import YFinanceProvider
+        quote = YFinanceProvider().get_quote(ticker)
+
+    from .formatters import format_stock_analysis_message
+    msg = format_stock_analysis_message(ticker, signal_row, action_row, quote)
+    await update.message.reply_text(msg, parse_mode='HTML')
+
+@owner_only
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📊 Portfolio", callback_data="portfolio"), InlineKeyboardButton("📈 Signals", callback_data="signals")],
+        [InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"), InlineKeyboardButton("💰 Funds", callback_data="funds")],
+        [InlineKeyboardButton("⚙️ Status", callback_data="status")],
+    ]
+    await update.message.reply_text("Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+@owner_only
+async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    dispatch = {
+        "portfolio": portfolio_command,
+        "signals": signals_command,
+        "action_plan": action_plan_command,
+        "funds": funds_command,
+        "status": status_command,
+    }
+    handler = dispatch.get(query.data)
+    if handler:
+        update.message = query.message
+        await handler(update, context)

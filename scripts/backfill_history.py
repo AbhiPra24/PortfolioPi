@@ -53,7 +53,19 @@ async def run_backfill():
                 
                 from_date_str = current_dt.strftime("%Y-%m-%dT00:00:00.000Z")
                 to_date_str = chunk_end_dt.strftime("%Y-%m-%dT00:00:00.000Z")
-                
+
+                # Skip chunk if already fully populated
+                chunk_from_str = current_dt.strftime("%Y-%m-%d")
+                chunk_to_str = chunk_end_dt.strftime("%Y-%m-%d")
+                async with db.execute("""
+                    SELECT COUNT(*) FROM ohlcv_cache
+                    WHERE stock_code = ? AND date >= ? AND date <= ?
+                """, (ticker, chunk_from_str, chunk_to_str)) as chk:
+                    existing = (await chk.fetchone())[0]
+                if existing > 0:
+                    current_dt = chunk_end_dt + timedelta(days=1)
+                    continue
+
                 try:
                     hist_data = await asyncio.to_thread(get_historical_with_retry, breeze, ticker, from_date_str, to_date_str)
                     

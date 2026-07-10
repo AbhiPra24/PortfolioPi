@@ -8,6 +8,7 @@ from app_config import settings
 
 logger = logging.getLogger(__name__)
 
+# No migration framework exists — new fields on an existing entity must be a new table (CREATE TABLE IF NOT EXISTS is a no-op on an already-created table), never an ALTER TABLE or a column addition to an existing CREATE statement.
 async def init_db():
     logger.info("Initializing SQLite DB in WAL mode...")
     async with aiosqlite.connect(settings.db_path) as db:
@@ -113,6 +114,47 @@ async def init_db():
                 nse_symbol TEXT,
                 isin TEXT,
                 resolved_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS backfill_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stock_code TEXT,
+                requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                processed_at DATETIME,
+                status TEXT,
+                error TEXT
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS data_health (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stock_code TEXT,
+                source TEXT,
+                status TEXT,
+                message TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio_value_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                total_invested REAL,
+                total_current_value REAL,
+                total_pnl REAL
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS stock_metadata (
+                stock_code TEXT PRIMARY KEY,
+                sector TEXT,
+                industry TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
