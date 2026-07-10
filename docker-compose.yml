@@ -45,6 +45,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./dashboard:/app/dashboard
+      - ./algo:/app/algo
     ports:
       - "0.0.0.0:8653:8501"
     environment:
