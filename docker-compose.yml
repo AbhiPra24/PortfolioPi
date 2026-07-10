@@ -12,6 +12,10 @@ services:
           memory: 512M
     env_file:
       - .env
+    environment:
+      - YFINANCE_CACHE_DIR=/tmp
+    ports:
+      - "0.0.0.0:8654:8654"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

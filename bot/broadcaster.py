@@ -12,7 +12,13 @@ logger = logging.getLogger(__name__)
 async def broadcast_message(app: Application, message: str):
     for owner_id in settings.owner_ids_list:
         try:
-            await app.bot.send_message(chat_id=owner_id, text=message, parse_mode='HTML')
+            # Telegram max length is 4096. Chunk it if needed.
+            if len(message) > 4000:
+                chunks = [message[i:i+4000] for i in range(0, len(message), 4000)]
+                for chunk in chunks:
+                    await app.bot.send_message(chat_id=owner_id, text=chunk, parse_mode='HTML')
+            else:
+                await app.bot.send_message(chat_id=owner_id, text=message, parse_mode='HTML')
         except Exception:
             logger.exception(f"Failed to send message to {owner_id}")
             os.makedirs("logs", exist_ok=True)

@@ -250,15 +250,27 @@ async def backfill_ticker_history(db, ticker, provider, depth_days=1095, chunk_d
     return total_rows
 
 async def run_market_data_refresh(app=None, send_digest=False):
-    """Breeze-independent refresh: OHLCV + signals + actions via yfinance.
-    Runs on a fixed interval regardless of Breeze session state or time of day."""
-    from core.providers import YFinanceProvider
+    """Market data refresh: Uses Breeze if session available, fallback to yfinance."""
+    from core.providers import YFinanceProvider, BreezeProvider
     from algo.screener import run_screener
     from algo.action_classifier import get_stock_action
+    from core.breeze_client import BreezeClient, SessionExpiredError
+    from core.session_store import get_session
     import pandas as pd
 
     provider = YFinanceProvider()
-    logger.info("Starting run_market_data_refresh (yfinance)")
+    source_name = "yfinance"
+    
+    token = await get_session()
+    if token:
+        try:
+            breeze = BreezeClient(token)
+            provider = BreezeProvider(breeze)
+            source_name = "breeze"
+        except SessionExpiredError:
+            logger.info("Breeze session expired, falling back to yfinance")
+            
+    logger.info(f"Starting run_market_data_refresh ({source_name})")
     try:
         async with aiosqlite.connect(settings.db_path) as db:
             async with db.execute("SELECT stock_code FROM holdings_snapshot") as cur:
@@ -277,8 +289,8 @@ async def run_market_data_refresh(app=None, send_digest=False):
                     try:
                         await backfill_ticker_history(db, ticker, provider)
                     except Exception as e:
-                        logger.error(f"yfinance backfill failed for {ticker}: {e}")
-                        await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'yfinance', 'failed', ?)", (ticker, str(e)))
+                        logger.error(f"{source_name} backfill failed for {ticker}: {e}")
+                        await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, ?, 'failed', ?)", (ticker, source_name, str(e)))
                         await db.commit()
                 else:
                     try:
@@ -292,8 +304,8 @@ async def run_market_data_refresh(app=None, send_digest=False):
                             rows = await asyncio.to_thread(provider.get_historical_ohlcv, ticker, from_dt, to_dt)
                             await _normalize_and_upsert_ohlcv(db, ticker, rows)
                         except Exception as e:
-                            logger.error(f"yfinance fetch failed for {ticker}: {e}")
-                            await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'yfinance', 'failed', ?)", (ticker, str(e)))
+                            logger.error(f"{source_name} fetch failed for {ticker}: {e}")
+                            await db.execute("INSERT INTO data_health (stock_code, source, status, message) VALUES (?, ?, 'failed', ?)", (ticker, source_name, str(e)))
                             await db.commit()
 
                 # Keep current_price fresh for the Portfolio auto-refresh (holdings only).

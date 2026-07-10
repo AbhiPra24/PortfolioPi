@@ -17,11 +17,11 @@ with col2:
         execute_db("INSERT INTO refresh_requests (requested_at) VALUES (CURRENT_TIMESTAMP)")
         st.success("Refresh requested — will run within ~60s")
 
-breeze_sync_ts = query_db("SELECT timestamp FROM job_heartbeats WHERE job_name = 'run_breeze_sync' ORDER BY timestamp DESC LIMIT 1")
-market_data_ts = query_db("SELECT timestamp FROM job_heartbeats WHERE job_name = 'run_market_data_refresh' ORDER BY timestamp DESC LIMIT 1")
+breeze_sync_ts = query_db("SELECT DATETIME(timestamp, '+5 hours', '+30 minutes') FROM job_heartbeats WHERE job_name = 'run_breeze_sync' ORDER BY timestamp DESC LIMIT 1")
+market_data_ts = query_db("SELECT DATETIME(timestamp, '+5 hours', '+30 minutes') FROM job_heartbeats WHERE job_name = 'run_market_data_refresh' ORDER BY timestamp DESC LIMIT 1")
 
-st.caption(f"**Holdings (Quantity/Avg Price) as of:** {breeze_sync_ts[0][0] if breeze_sync_ts else 'N/A (Pending Breeze Sync)'}")
-st.caption(f"**Prices & Signals as of:** {market_data_ts[0][0] if market_data_ts else 'N/A (Pending Market Data Refresh)'}")
+st.caption(f"**Holdings (Quantity/Avg Price) as of:** {breeze_sync_ts[0][0] + ' IST' if breeze_sync_ts and breeze_sync_ts[0][0] else 'N/A (Pending Breeze Sync)'}")
+st.caption(f"**Prices & Signals as of:** {market_data_ts[0][0] + ' IST' if market_data_ts and market_data_ts[0][0] else 'N/A (Pending Market Data Refresh)'}")
 
 refresh_interval = st.selectbox("Auto-refresh", ["Off", "15s", "30s", "60s"], index=3)
 interval_map = {"Off": None, "15s": "15s", "30s": "30s", "60s": "60s"}
