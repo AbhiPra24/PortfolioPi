@@ -16,18 +16,19 @@ A Streamlit dashboard, algorithmic screener, and Telegram bot for your ICICI Dir
     |         |                        |              |
     |         | (read-only)            | (read/write) |
     |  +------+------------------------+-----------+  |
-    |  |               SQLite (WAL)                |  |
-    |  +-----------------------+-------------------+  |
-    |                          |                      |
-    |                +---------+----------+           |
-    |                |    core/breeze     |           |
-    |                +---------+----------+           |
-    +--------------------------|----------------------+
-                               | (Internet)
-                    +----------+-----------+
-                    | ICICI Breeze Connect |
-                    +----------------------+
+    |  |                                            |  |
+    |  |                +---------+----------+      |  |
+    |  |                |    core/breeze     |      |  |
+    |  |                +---------+----------+      |  |
+    +--|--------------------------|-------------------+
+       | (Internet)               | (Internet)
+       v                          v
+    +----------+     +----------------------+
+    | Supabase |     | ICICI Breeze Connect |
+    | (Postgres)|    +----------------------+
+    +----------+
 ```
+Both the bot and dashboard connect directly to a hosted Supabase Postgres instance (not a local file) — `asyncpg` on the bot side, `psycopg2` on the dashboard side. This means the database is reachable and editable from anywhere, not just from the Pi.
 
 ## Setup & Deployment
 

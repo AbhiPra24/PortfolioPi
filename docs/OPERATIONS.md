@@ -14,21 +14,20 @@ docker exec portfoliopi-bot python -m scripts.backfill_history
 This will fetch 1095 calendar days in 90-day chunks, respecting rate limits.
 
 **Verification**:
-To ensure the backfill succeeded without silent API truncation, check the actual depth landed:
-```bash
-docker exec portfoliopi-bot sqlite3 data/portfoliopi.db "SELECT stock_code, COUNT(*) as days_cached, MIN(date) as earliest, MAX(date) as latest FROM ohlcv_cache GROUP BY stock_code ORDER BY days_cached ASC;"
+To ensure the backfill succeeded without silent API truncation, check the actual depth landed. Run this against the Supabase database (e.g. via its SQL Editor, or `psql`, or a quick one-off script):
+```sql
+SELECT stock_code, COUNT(*) as days_cached, MIN(date) as earliest, MAX(date) as latest FROM ohlcv_cache GROUP BY stock_code ORDER BY days_cached ASC;
 ```
 If most tickers show ~700+ days cached (roughly 3 years minus non-trading days), it worked.
 
 ## Restoring from Backups
-A nightly backup of the SQLite database is taken at 11:30 PM IST. Backups are stored in `data/backups/` and retained for 7 days.
-The backups are standard SQLite files created via `VACUUM INTO`.
+A nightly backup of every table is taken at 11:30 PM IST via `core/scheduler.py`'s `db_backup_job`, which streams each table out with Postgres's `COPY` command into a gzip-compressed CSV (`data/backups/<table>_<YYYYMMDD>.csv.gz`), retained for 7 days. This exists as a supplementary safety net in addition to whatever backup/PITR your Supabase project tier provides — check your Supabase project's Database → Backups settings for the platform-level restore options first, since those are usually the faster/more complete path.
 
-To restore:
-1. Stop the containers: `docker compose down`
-2. Backup the current broken DB: `mv data/portfoliopi.db data/portfoliopi.db.broken`
-3. Copy the desired backup: `cp data/backups/portfoliopi_YYYYMMDD.db data/portfoliopi.db`
-4. Restart the containers: `docker compose up -d`
+To restore a table from one of these CSV backups (example: `ohlcv_cache`):
+1. Decompress: `gunzip -k data/backups/ohlcv_cache_YYYYMMDD.csv.gz`
+2. In Supabase's SQL Editor or via `psql`, optionally back up the current (broken) table first: `CREATE TABLE ohlcv_cache_broken AS TABLE ohlcv_cache;`
+3. Truncate and reload: `TRUNCATE ohlcv_cache; \copy ohlcv_cache FROM 'ohlcv_cache_YYYYMMDD.csv' WITH (FORMAT csv, HEADER true);` (the `\copy` variant runs client-side via `psql`; use Supabase's Table Editor "Import data from CSV" feature if you don't have a direct `psql` connection.)
+4. Fix the identity sequence if the table has one: `SELECT setval(pg_get_serial_sequence('ohlcv_cache','id'), COALESCE((SELECT MAX(id) FROM ohlcv_cache),0)+1, false);`
 
 ## Data Ingestion & Refresh Architecture
 

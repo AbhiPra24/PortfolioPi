@@ -1,37 +1,42 @@
 import os
-import sqlite3
 
+import psycopg2
+import psycopg2.pool
 import streamlit as st
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "portfoliopi.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 
 @st.cache_resource
-def get_db_connection():
-    # URI mode=ro requires uri=True
-    uri = f"file:{DB_PATH}?mode=ro"
-    return sqlite3.connect(uri, uri=True, check_same_thread=False)
+def get_connection_pool():
+    return psycopg2.pool.ThreadedConnectionPool(1, 5, dsn=DATABASE_URL)
 
-def get_writable_db_connection():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 def query_db(query, args=(), one=False):
-    conn = get_db_connection()
-    cur = conn.cursor()
+    pool = get_connection_pool()
+    conn = pool.getconn()
     try:
+        cur = conn.cursor()
         cur.execute(query, args)
         rv = cur.fetchall()
         return (rv[0] if rv else None) if one else rv
-    except sqlite3.OperationalError as e:
+    except psycopg2.Error as e:
+        conn.rollback()
         st.error(f"DB Error: {e}")
         return None
+    finally:
+        pool.putconn(conn)
+
 
 def execute_db(query, args=()):
-    conn = get_writable_db_connection()
-    cur = conn.cursor()
+    pool = get_connection_pool()
+    conn = pool.getconn()
     try:
+        cur = conn.cursor()
         cur.execute(query, args)
         conn.commit()
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
+        conn.rollback()
         st.error(f"DB Error: {e}")
     finally:
-        conn.close()
+        pool.putconn(conn)

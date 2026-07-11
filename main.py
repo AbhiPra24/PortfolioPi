@@ -6,6 +6,7 @@ import urllib.parse
 
 from bot.app import create_app
 from core.database import init_db
+from core.db import init_pool
 from core.scheduler import start_scheduler
 from core.session_store import save_session
 
@@ -38,6 +39,7 @@ def run_callback_server():
     server.serve_forever()
 
 async def main():
+    await init_pool()
     await init_db()
     app = create_app()
     start_scheduler(app)

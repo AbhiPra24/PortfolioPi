@@ -17,9 +17,9 @@ else:
 
 breeze_sync = query_db("SELECT timestamp FROM job_heartbeats WHERE job_name = 'run_breeze_sync' ORDER BY timestamp DESC LIMIT 1", one=True)
 if breeze_sync:
-    from datetime import datetime
-    sync_dt = datetime.strptime(breeze_sync[0], "%Y-%m-%d %H:%M:%S")
-    days_ago = (datetime.now() - sync_dt).days
+    from datetime import datetime, timezone
+    sync_dt = breeze_sync[0]
+    days_ago = (datetime.now(timezone.utc) - sync_dt).days
     st.info(f"**Last Breeze Sync (Holdings & Quantities):** {breeze_sync[0]} ({days_ago} days ago)")
 else:
     st.warning("**Last Breeze Sync:** Never")

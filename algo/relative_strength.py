@@ -1,8 +1,6 @@
 """IBD-style Relative Strength scoring against the Nifty 50."""
 
-import sqlite3
 import pandas as pd
-from app_config import settings
 
 def compute_relative_strength(stock_df: pd.DataFrame, nifty_df: pd.DataFrame):
     if len(stock_df) < 200 or len(nifty_df) < 200:

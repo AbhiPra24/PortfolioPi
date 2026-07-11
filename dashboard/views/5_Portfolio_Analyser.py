@@ -35,7 +35,7 @@ else:
         nifty_df = pd.DataFrame(nifty, columns=['date', 'close']).set_index('date')['close']
         betas = []
         for stock in df['Stock Code']:
-            rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = ? ORDER BY date", (stock,))
+            rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = %s ORDER BY date", (stock,))
             if rows and len(rows) > 30:
                 stock_series = pd.DataFrame(rows, columns=['date', 'close']).set_index('date')['close']
                 aligned = pd.concat([stock_series, nifty_df], axis=1, join='inner')

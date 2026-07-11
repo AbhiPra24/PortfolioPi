@@ -2,12 +2,12 @@
 
 import logging
 
-import aiosqlite
+import asyncpg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from app_config import settings
 from core.breeze_client import BreezeClient
+from core.db import get_pool
 from core.session_store import get_session, save_session
 
 from .formatters import format_portfolio_message, format_signals_message
@@ -36,10 +36,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with aiosqlite.connect(settings.db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM holdings_snapshot ORDER BY timestamp DESC LIMIT 50") as cur:
-            rows = await cur.fetchall()
+    pool = get_pool()
+    async with pool.acquire() as db:
+        rows = await db.fetch("SELECT * FROM holdings_snapshot ORDER BY timestamp DESC LIMIT 50")
 
     holdings = [dict(row) for row in rows]
     msg = format_portfolio_message(holdings)
@@ -47,14 +46,14 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with aiosqlite.connect(settings.db_path) as db:
-        async with db.execute("""
-            SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score 
-            FROM signals 
-            WHERE timestamp >= datetime('now', '-1 day')
+    pool = get_pool()
+    async with pool.acquire() as db:
+        rows = await db.fetch("""
+            SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score
+            FROM signals
+            WHERE timestamp >= NOW() - INTERVAL '1 day'
             ORDER BY composite_score DESC LIMIT 10
-        """) as cur:
-            rows = await cur.fetchall()
+        """)
 
     msg = format_signals_message(rows)
     await update.message.reply_text(msg, parse_mode='HTML')
@@ -73,7 +72,7 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
         if details.get("Success"):
             await save_session(token)
             await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.", parse_mode='HTML')
-            
+
             from core.data_refresh import run_breeze_sync
             import asyncio
             asyncio.create_task(run_breeze_sync(context.application, silent=False))
@@ -89,15 +88,15 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     action = context.args[0].lower()
+    pool = get_pool()
 
     if action == "list":
-        async with aiosqlite.connect(settings.db_path) as db:
-            async with db.execute("SELECT stock_code FROM watchlist") as cur:
-                rows = await cur.fetchall()
+        async with pool.acquire() as db:
+            rows = await db.fetch("SELECT stock_code FROM watchlist")
         if not rows:
             await update.message.reply_text("Watchlist is empty.", parse_mode='HTML')
             return
-        msg = "<b>Watchlist:</b>\n" + "\n".join([f"- <code>{r[0]}</code>" for r in rows])
+        msg = "<b>Watchlist:</b>\n" + "\n".join([f"- <code>{r['stock_code']}</code>" for r in rows])
         await update.message.reply_text(msg, parse_mode='HTML')
         return
 
@@ -122,30 +121,29 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Validation failed for <code>{ticker}</code>: {e}", parse_mode='HTML')
             return
 
-        async with aiosqlite.connect(settings.db_path) as db:
+        async with pool.acquire() as db:
             try:
-                await db.execute("INSERT INTO watchlist (stock_code) VALUES (?)", (ticker,))
-                await db.commit()
+                await db.execute("INSERT INTO watchlist (stock_code) VALUES ($1)", ticker)
                 await update.message.reply_text(f"Added <code>{ticker}</code> to watchlist. Starting backfill...", parse_mode='HTML')
-                
+
                 async def run_backfill():
                     from core.providers import YFinanceProvider
                     from core.data_refresh import backfill_ticker_history
-                    async with aiosqlite.connect(settings.db_path) as conn:
+                    conn_pool = get_pool()
+                    async with conn_pool.acquire() as conn:
                         try:
                             await backfill_ticker_history(conn, ticker, YFinanceProvider())
                         except Exception as e:
                             logger.error(f"Watchlist add background backfill failed for {ticker}: {e}")
-                
+
                 import asyncio
                 asyncio.create_task(run_backfill())
-            except aiosqlite.IntegrityError:
+            except asyncpg.UniqueViolationError:
                 await update.message.reply_text(f"<code>{ticker}</code> is already in watchlist.", parse_mode='HTML')
 
     elif action == "remove":
-        async with aiosqlite.connect(settings.db_path) as db:
-            await db.execute("DELETE FROM watchlist WHERE stock_code = ?", (ticker,))
-            await db.commit()
+        async with pool.acquire() as db:
+            await db.execute("DELETE FROM watchlist WHERE stock_code = $1", ticker)
             await update.message.reply_text(f"Removed <code>{ticker}</code> from watchlist.", parse_mode='HTML')
     else:
         await update.message.reply_text("Unknown action. Use add, remove, or list.", parse_mode='HTML')
@@ -197,34 +195,30 @@ async def funds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with aiosqlite.connect(settings.db_path) as db:
-        async with db.execute("SELECT job_name, timestamp FROM job_heartbeats ORDER BY timestamp DESC LIMIT 5") as cur:
-            heartbeats = await cur.fetchall()
-
-        async with db.execute("SELECT timestamp FROM session_tokens LIMIT 1") as cur:
-            session_row = await cur.fetchone()
-
-        async with db.execute("SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5") as cur:
-            failures = await cur.fetchall()
+    pool = get_pool()
+    async with pool.acquire() as db:
+        heartbeats = await db.fetch("SELECT job_name, timestamp FROM job_heartbeats ORDER BY timestamp DESC LIMIT 5")
+        session_row = await db.fetchrow("SELECT timestamp FROM session_tokens LIMIT 1")
+        failures = await db.fetch("SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5")
 
     msg = "<b>System Status</b>\n\n"
 
     if session_row:
-        msg += f"<b>Session Last Updated:</b> {session_row[0]}\n"
+        msg += f"<b>Session Last Updated:</b> {session_row['timestamp']}\n"
     else:
         msg += "<b>Session:</b> Not set\n"
 
     msg += "\n<b>Recent Job Heartbeats:</b>\n"
     if heartbeats:
         for hb in heartbeats:
-            msg += f"- <code>{hb[0]}</code>: {hb[1]}\n"
+            msg += f"- <code>{hb['job_name']}</code>: {hb['timestamp']}\n"
     else:
         msg += "No recent heartbeats found.\n"
 
     msg += "\n<b>Recent Data Health Issues:</b>\n"
     if failures:
         for f in failures:
-            msg += f"- ⚠️ <code>{f[0]}</code> ({f[1]}): {f[2]} at {f[3]}\n"
+            msg += f"- ⚠️ <code>{f['stock_code']}</code> ({f['source']}): {f['message']} at {f['timestamp']}\n"
     else:
         msg += "No recent data-fetch failures.\n"
 
@@ -250,9 +244,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with aiosqlite.connect(settings.db_path) as db:
-        async with db.execute("SELECT stock_code, action, rationale FROM stock_actions ORDER BY action") as cur:
-            rows = await cur.fetchall()
+    pool = get_pool()
+    async with pool.acquire() as db:
+        rows = await db.fetch("SELECT stock_code, action, rationale FROM stock_actions ORDER BY action")
 
     if not rows:
         await update.message.reply_text("No action plan data available.", parse_mode='HTML')
@@ -260,12 +254,12 @@ async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     msg = "<b>Portfolio Action Plan:</b>\n"
     for r in rows:
-        if r[1] != "HOLD":
-            msg += f"\n<b>{r[0]}</b>: {r[1]}\n<i>{r[2]}</i>\n"
-    
+        if r['action'] != "HOLD":
+            msg += f"\n<b>{r['stock_code']}</b>: {r['action']}\n<i>{r['rationale']}</i>\n"
+
     if len(msg) > 4000:
         msg = msg[:4000] + "\n... (truncated)"
-        
+
     await update.message.reply_text(msg, parse_mode='HTML')
 
 @owner_only
@@ -275,12 +269,10 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     ticker = context.args[0].upper()
 
-    async with aiosqlite.connect(settings.db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM signals WHERE stock_code = ? ORDER BY timestamp DESC LIMIT 1", (ticker,)) as cur:
-            signal_row = await cur.fetchone()
-        async with db.execute("SELECT * FROM stock_actions WHERE stock_code = ?", (ticker,)) as cur:
-            action_row = await cur.fetchone()
+    pool = get_pool()
+    async with pool.acquire() as db:
+        signal_row = await db.fetchrow("SELECT * FROM signals WHERE stock_code = $1 ORDER BY timestamp DESC LIMIT 1", ticker)
+        action_row = await db.fetchrow("SELECT * FROM stock_actions WHERE stock_code = $1", ticker)
 
     breeze = await get_breeze_client()
     if breeze:

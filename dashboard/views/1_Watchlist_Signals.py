@@ -24,8 +24,8 @@ with col1:
             if new_stock:
                 new_stock = new_stock.strip().upper()
                 if new_stock not in watchlist:
-                    execute_db("INSERT INTO watchlist (stock_code) VALUES (?)", (new_stock,))
-                    execute_db("INSERT INTO backfill_requests (stock_code) VALUES (?)", (new_stock,))
+                    execute_db("INSERT INTO watchlist (stock_code) VALUES (%s)", (new_stock,))
+                    execute_db("INSERT INTO backfill_requests (stock_code) VALUES (%s)", (new_stock,))
                     st.success(f"Added {new_stock} to watchlist!")
                     st.rerun()
                 else:
@@ -38,7 +38,7 @@ with col2:
             remove_stock = st.selectbox("Select Stock", watchlist)
             if st.form_submit_button("Remove"):
                 if remove_stock:
-                    execute_db("DELETE FROM watchlist WHERE stock_code = ?", (remove_stock,))
+                    execute_db("DELETE FROM watchlist WHERE stock_code = %s", (remove_stock,))
                     st.success(f"Removed {remove_stock} from watchlist!")
                     st.rerun()
         else:
