@@ -32,23 +32,32 @@ def parse_ts(value):
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
 
-# (table_name, columns in migration order, columns that need SQLite-text -> datetime parsing)
+# (table_name, columns in migration order, columns that need SQLite-text -> datetime
+# parsing, order-by column for the SELECT). Tables keyed by stock_code (no surrogate
+# `id` column) pass has_id=False so no identity-sequence fixup is attempted.
 TABLES = [
-    ("holdings_snapshot", ["id", "stock_code", "quantity", "average_price", "current_price", "timestamp"], ["timestamp"]),
-    ("watchlist", ["id", "stock_code"], []),
-    ("ohlcv_cache", ["id", "stock_code", "date", "open", "high", "low", "close", "volume"], []),
+    ("holdings_snapshot", ["id", "stock_code", "quantity", "average_price", "current_price", "timestamp"], ["timestamp"], "id", True),
+    ("watchlist", ["id", "stock_code"], [], "id", True),
+    ("ohlcv_cache", ["id", "stock_code", "date", "open", "high", "low", "close", "volume"], [], "id", True),
     ("signals", ["id", "stock_code", "rsi14", "macd_line", "macd_signal", "sma50", "sma200",
-                 "pct_from_52w_high", "volume_ratio_20d", "composite_score", "timestamp"], ["timestamp"]),
-    ("job_heartbeats", ["id", "job_name", "timestamp"], ["timestamp"]),
-    ("session_tokens", ["id", "token", "timestamp"], ["timestamp"]),
-    ("refresh_requests", ["id", "requested_at", "processed_at"], ["requested_at", "processed_at"]),
-    ("stage_history", ["id", "stock_code", "date", "stage", "sma_150", "slope"], []),
-    ("stock_actions", ["id", "stock_code", "action", "rationale", "timestamp"], ["timestamp"]),
+                 "pct_from_52w_high", "volume_ratio_20d", "composite_score", "timestamp"], ["timestamp"], "id", True),
+    ("job_heartbeats", ["id", "job_name", "timestamp"], ["timestamp"], "id", True),
+    ("session_tokens", ["id", "token", "timestamp"], ["timestamp"], "id", True),
+    ("refresh_requests", ["id", "requested_at", "processed_at"], ["requested_at", "processed_at"], "id", True),
+    ("stage_history", ["id", "stock_code", "date", "stage", "sma_150", "slope"], [], "id", True),
+    ("stock_actions", ["id", "stock_code", "action", "rationale", "timestamp"], ["timestamp"], "id", True),
+    ("ticker_mapping", ["stock_code", "nse_symbol", "isin", "resolved_at"], ["resolved_at"], "stock_code", False),
+    ("backfill_requests", ["id", "stock_code", "requested_at", "processed_at", "status", "error"],
+     ["requested_at", "processed_at"], "id", True),
+    ("data_health", ["id", "stock_code", "source", "status", "message", "timestamp"], ["timestamp"], "id", True),
+    ("portfolio_value_history", ["id", "timestamp", "total_invested", "total_current_value", "total_pnl"],
+     ["timestamp"], "id", True),
+    ("stock_metadata", ["stock_code", "sector", "industry", "updated_at"], ["updated_at"], "stock_code", False),
 ]
 
 
-async def migrate_table(pg_conn, sqlite_conn, table, columns, ts_columns, truncate):
-    cur = sqlite_conn.execute(f"SELECT {', '.join(columns)} FROM {table} ORDER BY id")
+async def migrate_table(pg_conn, sqlite_conn, table, columns, ts_columns, order_col, has_id, truncate):
+    cur = sqlite_conn.execute(f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_col}")
     rows = cur.fetchall()
 
     if truncate:
@@ -69,10 +78,11 @@ async def migrate_table(pg_conn, sqlite_conn, table, columns, ts_columns, trunca
     insert_sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
     await pg_conn.executemany(insert_sql, processed_rows)
 
-    await pg_conn.execute(
-        f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
-        f"COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)"
-    )
+    if has_id:
+        await pg_conn.execute(
+            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+            f"COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)"
+        )
 
     logger.info(f"{table}: migrated {len(rows)} rows")
     return len(rows)
@@ -99,8 +109,8 @@ async def main():
 
     try:
         total = 0
-        for table, columns, ts_columns in TABLES:
-            total += await migrate_table(pg_conn, sqlite_conn, table, columns, ts_columns, args.truncate)
+        for table, columns, ts_columns, order_col, has_id in TABLES:
+            total += await migrate_table(pg_conn, sqlite_conn, table, columns, ts_columns, order_col, has_id, args.truncate)
         logger.info(f"Migration complete. {total} total row(s) migrated across {len(TABLES)} tables.")
     finally:
         sqlite_conn.close()
