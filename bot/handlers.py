@@ -68,7 +68,7 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
     # Immediately validate token
     try:
         breeze = BreezeClient(token)
-        details = breeze.get_customer_details()
+        details = breeze.get_customer_details(api_session=token)
         if details.get("Success"):
             await save_session(token)
             await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.", parse_mode='HTML')
