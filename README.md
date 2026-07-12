@@ -2,33 +2,73 @@
 
 A Streamlit dashboard, algorithmic screener, and Telegram bot for your ICICI Direct stock portfolio. **Read-only by design** — PortfolioPi strictly analyzes data and will never place, modify, or cancel orders.
 
-## Architecture
+## Architecture & Data Flow
 
-```text
-    +-------------------------------------------------+
-    |                  Raspberry Pi                   |
-    |                                                 |
-    |  +-------------+      +----------------------+  |
-    |  | Dashboard   |      | Bot                  |  |
-    |  | (Streamlit) |      | (Python Telegram Bot)|  |
-    |  | Port: 8653  |      | + APScheduler        |  |
-    |  +------+------+      +----------+-----------+  |
-    |         |                        |              |
-    |         | (read-only)            | (read/write) |
-    |  +------+------------------------+-----------+  |
-    |  |                                            |  |
-    |  |                +---------+----------+      |  |
-    |  |                |    core/breeze     |      |  |
-    |  |                +---------+----------+      |  |
-    +--|--------------------------|-------------------+
-       | (Internet)               | (Internet)
-       v                          v
-    +----------+     +----------------------+
-    | Supabase |     | ICICI Breeze Connect |
-    | (Postgres)|    +----------------------+
-    +----------+
+```mermaid
+flowchart TD
+    subgraph HOST["🖥️ Raspberry Pi Host"]
+        USER["Telegram App\n(owner's phone/desktop)"]
+    end
+
+    subgraph DOCKER["🐳 Docker Compose Stack"]
+
+        subgraph BOT["portfoliopi-bot"]
+            TGBOT["🤖 Telegram Bot\npolling — /portfolio /signals\n/analyse /watchlist /refresh_session"]
+            SCHED["⏱️ APScheduler\ndaily_digest (8am IST) · market_data_refresh (60m)\nprocess_refresh_requests (60s) · process_backfill_requests (20s)\ndb_backup (23:30 IST)"]
+            BREEZE["core/breeze_client\nBreezeClient wraps BreezeConnect"]
+            REFRESH["core/data_refresh\nrun_breeze_sync · backfill_ticker_history"]
+            ALGO["algo/screener\nRSI · MACD · SMA · Weinstein Stage\nAction Classification"]
+            CALLBACK["🌐 ICICI Callback Receiver :8654"]
+        end
+
+        subgraph DASH["portfoliopi-dashboard  [0.0.0.0:8653]"]
+            STREAMLIT["📊 Streamlit Dashboard\nPortfolio · Watchlist & Signals\nHistorical Charts · Action Plan\nSession Status · Portfolio Analyser"]
+        end
+
+        DB[("🗄️ Supabase\n(hosted Postgres)\n─────────────\nholdings_snapshot · signals\nstock_actions · ohlcv_cache\njob_heartbeats · data_health\nsession_tokens · stage_history\nportfolio_value_history\nbackfill_requests · refresh_requests\nstock_metadata · ticker_mapping\nwatchlist")]
+    end
+
+    subgraph EXTERNAL["☁️ External"]
+        TG["Telegram API\napi.telegram.org"]
+        BREEZEAPI["ICICI Breeze Connect API\napi.icicidirect.com\n(read-only: no order placement)"]
+        YF["Yahoo Finance\nvia yfinance\n(fallback when Breeze session expired)"]
+    end
+
+    %% User interaction
+    USER <-->|"HTTPS polling"| TG
+    TG <-->|"commands / replies"| TGBOT
+
+    %% Bot internals
+    TGBOT --> SCHED
+    TGBOT -->|"/refresh_session <token>"| BREEZE
+    SCHED --> REFRESH
+    REFRESH --> BREEZE
+    REFRESH -->|"session expired"| YF
+    REFRESH --> ALGO
+    ALGO --> DB
+    REFRESH --> DB
+    SCHED -->|"digest / alerts"| TGBOT
+    BREEZE -->|"apisession token"| BREEZEAPI
+    BREEZEAPI -->|"redirect w/ token"| CALLBACK
+
+    %% Dashboard
+    DB -->|"psycopg2 pool"| STREAMLIT
+    STREAMLIT -->|"password-gated,\nno reverse proxy"| USER
+
+    %% Bot DB access
+    TGBOT -->|"asyncpg pool"| DB
+
+    classDef container fill:#1e3a5f,stroke:#4a9eff,color:#fff
+    classDef db fill:#2d4a1e,stroke:#6abf4b,color:#fff
+    classDef host fill:#3a1f1f,stroke:#cc4444,color:#fff
+    classDef external fill:#2d2040,stroke:#9b6eff,color:#fff
+    class BOT,DASH container
+    class DB db
+    class HOST host
+    class EXTERNAL external
 ```
-Both the bot and dashboard connect directly to a hosted Supabase Postgres instance (not a local file) — `asyncpg` on the bot side, `psycopg2` on the dashboard side. This means the database is reachable and editable from anywhere, not just from the Pi.
+
+Both the bot and dashboard connect directly to a hosted Supabase Postgres instance (not a local file) — `asyncpg` on the bot side, `psycopg2` on the dashboard side. This means the database is reachable and editable from anywhere, not just from the Pi. Unlike OverwatcherPI, the dashboard is exposed on `0.0.0.0:8653` directly (password-gated) rather than behind a reverse proxy.
 
 ## Setup & Deployment
 
