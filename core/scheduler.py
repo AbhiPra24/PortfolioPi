@@ -18,6 +18,7 @@ async def daily_digest_job(app: Application):
 
 async def market_data_refresh_job(app: Application):
     logger.info("Running market data refresh...")
+    await run_breeze_sync(app, silent=True)
     await run_market_data_refresh(app, send_digest=False)
 
 async def process_refresh_requests_job(app: Application):
