@@ -1,6 +1,7 @@
 """Portfolio-level analytics: concentration, correlation/beta, stage-health rollup."""
 import pandas as pd
 
+
 def compute_concentration(holdings_df: pd.DataFrame, top_n=5) -> dict:
     total = holdings_df['Current Value'].sum()
     top = holdings_df.nlargest(top_n, 'Current Value')

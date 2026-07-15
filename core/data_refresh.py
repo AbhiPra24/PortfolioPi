@@ -45,14 +45,16 @@ async def run_breeze_sync(app=None, silent=True):
         token = await get_session()
         if not token:
             logger.info("run_breeze_sync skipped: Session missing.")
-            if not silent and app: await broadcast_message(app, "🚨 Sync Failed: Session missing.")
+            if not silent and app:
+                await broadcast_message(app, "🚨 Sync Failed: Session missing.")
             return
 
         try:
             breeze = BreezeClient(token)
         except SessionExpiredError:
             logger.info("run_breeze_sync skipped: Session expired.")
-            if not silent and app: await broadcast_message(app, "🚨 Sync Failed: Session expired.")
+            if not silent and app:
+                await broadcast_message(app, "🚨 Sync Failed: Session expired.")
             return
 
         pool = get_pool()
@@ -218,7 +220,8 @@ async def run_breeze_sync(app=None, silent=True):
     except Exception as e:
         logger.exception("Error in run_breeze_sync")
         import html
-        if not silent and app: await broadcast_message(app, f"🚨 Unhandled Error in Breeze Sync:\n{html.escape(str(e))}")
+        if not silent and app:
+            await broadcast_message(app, f"🚨 Unhandled Error in Breeze Sync:\n{html.escape(str(e))}")
 
 
 async def _normalize_and_upsert_ohlcv(db, ticker, rows):
@@ -249,12 +252,10 @@ async def backfill_ticker_history(db, ticker, provider, depth_days=1095, chunk_d
 
 async def run_market_data_refresh(app=None, send_digest=False):
     """Market data refresh: Uses Breeze if session available, fallback to yfinance."""
-    from core.providers import YFinanceProvider, BreezeProvider
-    from algo.screener import run_screener
     from algo.action_classifier import get_stock_action
     from core.breeze_client import BreezeClient, SessionExpiredError
+    from core.providers import BreezeProvider, YFinanceProvider
     from core.session_store import get_session
-    import pandas as pd
 
     provider = YFinanceProvider()
     source_name = "yfinance"

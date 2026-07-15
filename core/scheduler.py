@@ -5,9 +5,9 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.ext import Application
 
-from .data_refresh import run_breeze_sync, run_market_data_refresh
-
 from core.db import get_pool
+
+from .data_refresh import run_breeze_sync, run_market_data_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,8 @@ async def process_refresh_requests_job(app: Application):
         logger.error(f"Error checking refresh_requests: {e}")
 
 async def process_backfill_requests_job(app: Application):
-    from core.providers import YFinanceProvider
     from core.data_refresh import backfill_ticker_history
+    from core.providers import YFinanceProvider
     try:
         pool = get_pool()
         async with pool.acquire() as db:

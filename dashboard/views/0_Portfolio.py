@@ -1,11 +1,10 @@
-import asyncio
 import os
 import sys
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from db import query_db, execute_db
+from db import execute_db, query_db
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 

@@ -5,8 +5,6 @@ import pandas as pd
 
 from app_config import settings
 
-from .ranking import calculate_composite_score
-
 
 async def run_backtest(dsn=None):
     """

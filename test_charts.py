@@ -1,6 +1,9 @@
-import pandas as pd
 import sqlite3
-import numpy as np
+
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 
 def calculate_sma(series, window):
     return series.rolling(window=window).mean()
@@ -39,9 +42,6 @@ df['MACD_Signal'] = signal_line
 df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
 
 print(df.tail())
-
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 fig = make_subplots(rows=4, cols=1)
 fig.add_trace(go.Bar(x=df['date'], y=df['MACD_Hist'], name='Histogram', marker_color=['green' if val >= 0 else 'red' for val in df['MACD_Hist']]), row=4, col=1)

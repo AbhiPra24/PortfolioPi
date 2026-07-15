@@ -1,7 +1,9 @@
 import logging
+
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from core.breeze_client import BreezeClient
+
 from .base import MarketDataProvider
 
 logger = logging.getLogger(__name__)

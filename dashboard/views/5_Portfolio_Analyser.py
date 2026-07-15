@@ -1,11 +1,13 @@
+import os
+import sys
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from db import query_db
 
-import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from algo.portfolio_analytics import compute_concentration, compute_beta, rollup_stage_health
+from algo.portfolio_analytics import compute_beta, compute_concentration, rollup_stage_health
 
 st.header("Portfolio Analyser")
 

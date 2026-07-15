@@ -36,18 +36,18 @@ def format_signals_message(signals: list, actions_by_stock=None) -> str:
 
     for s in sorted_signals:
         stock, rsi, macd, macd_sig, sma50, sma200, pct_52w, vol_ratio, score = s
-        
+
         score_str = f"{score:.0f}" if score is not None else "N/A"
         rsi_str = f"{rsi:.1f}" if rsi is not None else "N/A"
         vol_str = f"{vol_ratio:.1f}" if vol_ratio is not None else "N/A"
         sma50_str = f"{sma50:.1f}" if sma50 is not None else "N/A"
         sma200_str = f"{sma200:.1f}" if sma200 is not None else "N/A"
         pct_str = f"{pct_52w:.1f}" if pct_52w is not None else "N/A"
-        
+
         verdict_str = ""
         if actions_by_stock and stock in actions_by_stock:
             verdict_str = f" — <b>{actions_by_stock[stock]}</b>"
-            
+
         msg += f"<b>{stock}</b> (Score: {score_str}){verdict_str}\n"
         msg += f"  RSI: {rsi_str} | Vol Spike: {vol_str}x\n"
         msg += f"  SMA50: {sma50_str} | SMA200: {sma200_str}\n"

@@ -1,5 +1,6 @@
 import os
 import sys
+
 import pandas as pd
 import streamlit as st
 from db import query_db
@@ -14,7 +15,7 @@ data = query_db("SELECT stock_code, action, rationale, timestamp FROM stock_acti
 
 if data:
     df = pd.DataFrame(data, columns=['Stock Code', 'Action', 'Rationale', 'Updated At'])
-    
+
     actions = sorted(df['Action'].unique())
     for action in actions:
         st.subheader(f"🏷️ {action}")

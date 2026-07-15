@@ -3,7 +3,7 @@
 import logging
 
 import asyncpg
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from core.breeze_client import BreezeClient
@@ -73,8 +73,9 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
             await save_session(token)
             await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.", parse_mode='HTML')
 
-            from core.data_refresh import run_breeze_sync
             import asyncio
+
+            from core.data_refresh import run_breeze_sync
             asyncio.create_task(run_breeze_sync(context.application, silent=False))
         else:
             await update.message.reply_text(f"<b>Failed to validate token.</b> API Response: {details.get('Error', 'Unknown error')}", parse_mode='HTML')
@@ -127,8 +128,8 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"Added <code>{ticker}</code> to watchlist. Starting backfill...", parse_mode='HTML')
 
                 async def run_backfill():
-                    from core.providers import YFinanceProvider
                     from core.data_refresh import backfill_ticker_history
+                    from core.providers import YFinanceProvider
                     conn_pool = get_pool()
                     async with conn_pool.acquire() as conn:
                         try:

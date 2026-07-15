@@ -1,7 +1,9 @@
 import logging
+
 import yfinance as yf
 
 from core.ticker_mapping import map_to_yfinance_ticker
+
 from .base import MarketDataProvider
 
 logger = logging.getLogger(__name__)

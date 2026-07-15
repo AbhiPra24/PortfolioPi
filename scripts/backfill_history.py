@@ -6,9 +6,9 @@ import asyncpg
 import pandas as pd
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from app_config import settings
 from core.breeze_client import BreezeClient
 from core.session_store import get_session
-from app_config import settings
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

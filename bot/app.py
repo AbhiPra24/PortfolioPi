@@ -1,13 +1,17 @@
 """Telegram bot initialization and long-polling entry point."""
 
 from telegram import BotCommand
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from app_config import settings
 
 from .handlers import (
+    action_plan_command,
+    analyse_command,
     funds_command,
     help_command,
+    menu_callback_handler,
+    menu_command,
     portfolio_command,
     price_command,
     refresh_session_command,
@@ -15,10 +19,6 @@ from .handlers import (
     start_command,
     status_command,
     watchlist_command,
-    action_plan_command,
-    analyse_command,
-    menu_command,
-    menu_callback_handler,
 )
 
 COMMANDS = [
