@@ -64,3 +64,71 @@ def format_stock_analysis_message(ticker, signal_row, action_row, quote):
     if action_row:
         lines.append(f"\n<b>Verdict: {action_row['action']}</b>\n<i>{action_row['rationale']}</i>")
     return "\n".join(lines)
+
+
+def format_sips_message(sips: list) -> str:
+    if not sips:
+        return "No active SIPs found in the database."
+
+    total_monthly = sum(s.get('monthly_sip', 0) for s in sips)
+    msg = f"📋 <b>Active SIP Book ({len(sips)} Instruments)</b>\n"
+    msg += f"<b>Total Monthly Inflow:</b> ₹{total_monthly:,.0f}\n\n"
+
+    # Group by target_action
+    grouped = {}
+    for s in sips:
+        action = s.get('target_action') or 'HOLD'
+        grouped.setdefault(action, []).append(s)
+
+    order = [
+        ("BUY MORE / CONTINUE", "🟢 <b>CONTINUE / BUY MORE</b>"),
+        ("HOLD / ACCUMULATE", "⚪ <b>HOLD / STEADY</b>"),
+        ("TRIM / PAUSE SIP", "🟡 <b>PAUSE SIP / TRIM</b>"),
+        ("SELL / STOP SIP", "🔴 <b>STOP SIP / REALLOCATE</b>"),
+    ]
+
+    for action_key, header in order:
+        items = grouped.get(action_key, [])
+        if items:
+            subtotal = sum(i.get('monthly_sip', 0) for i in items)
+            msg += f"{header} (₹{subtotal:,.0f}/mo):\n"
+            for item in items:
+                ticker = item.get('ticker')
+                amount = item.get('monthly_sip', 0)
+                msg += f"  • <code>{ticker}</code>: ₹{amount:,.0f}/mo\n"
+            msg += "\n"
+
+    # Any remaining unlisted actions
+    known_keys = {k for k, _ in order}
+    other_items = [s for s in sips if (s.get('target_action') or 'HOLD') not in known_keys]
+    if other_items:
+        msg += "<b>Other Instruments:</b>\n"
+        for item in other_items:
+            msg += f"  • <code>{item.get('ticker')}</code>: ₹{item.get('monthly_sip', 0):,.0f}/mo ({item.get('target_action')})\n"
+
+    return msg.strip()
+
+
+def format_cashflow_message(dividend_rows: list, total_holdings_count: int = 0) -> str:
+    if not dividend_rows:
+        return "No dividend schedule data available."
+
+    total_annual = sum(r.get('est_annual_cashflow', 0) for r in dividend_rows)
+    monthly_runrate = total_annual / 12.0
+
+    msg = "💰 <b>Portfolio Dividend & Cashflow Engine</b>\n\n"
+    msg += f"<b>Estimated Annual Cashflow:</b> ₹{total_annual:,.0f} / year\n"
+    msg += f"<b>Monthly Baseline Run-rate:</b> ~₹{monthly_runrate:,.0f} / month\n\n"
+
+    msg += "<b>Top Yield-on-Cost (YoC) Generators:</b>\n"
+    sorted_yoc = sorted(dividend_rows, key=lambda x: x.get('yield_on_cost', 0), reverse=True)
+    for r in sorted_yoc[:8]:
+        ticker = r.get('ticker')
+        yoc = r.get('yield_on_cost', 0)
+        est = r.get('est_annual_cashflow', 0)
+        freq = r.get('payout_frequency', 'PERIODIC')
+        msg += f"  • <code>{ticker}</code>: YoC <b>{yoc:.2f}%</b> (₹{est:,.0f}/yr, {freq})\n"
+
+    msg += "\n<i>Projections scale automatically as monthly SIPs compound.</i>"
+    return msg
+

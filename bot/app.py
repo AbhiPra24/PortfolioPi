@@ -8,6 +8,7 @@ from app_config import settings
 from .handlers import (
     action_plan_command,
     analyse_command,
+    cashflow_command,
     funds_command,
     help_command,
     menu_callback_handler,
@@ -16,6 +17,7 @@ from .handlers import (
     price_command,
     refresh_session_command,
     signals_command,
+    sips_command,
     start_command,
     status_command,
     watchlist_command,
@@ -26,6 +28,8 @@ COMMANDS = [
     BotCommand("menu", "Show interactive menu"),
     BotCommand("portfolio", "View current holdings"),
     BotCommand("signals", "View today's signals"),
+    BotCommand("sips", "View active SIP book & quant guidance"),
+    BotCommand("cashflow", "View dividend & cashflow projections"),
     BotCommand("analyse", "Full analysis for one ticker"),
     BotCommand("action_plan", "View buy/sell/hold verdicts"),
     BotCommand("watchlist", "Manage watchlist"),
@@ -47,6 +51,8 @@ def create_app() -> Application:
     app.add_handler(CallbackQueryHandler(menu_callback_handler))
     app.add_handler(CommandHandler("portfolio", portfolio_command))
     app.add_handler(CommandHandler("signals", signals_command))
+    app.add_handler(CommandHandler("sips", sips_command))
+    app.add_handler(CommandHandler("cashflow", cashflow_command))
     app.add_handler(CommandHandler("watchlist", watchlist_command))
     app.add_handler(CommandHandler("price", price_command))
     app.add_handler(CommandHandler("funds", funds_command))

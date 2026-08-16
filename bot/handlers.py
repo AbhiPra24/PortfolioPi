@@ -10,7 +10,12 @@ from core.breeze_client import BreezeClient
 from core.db import get_pool
 from core.session_store import get_session, save_session
 
-from .formatters import format_portfolio_message, format_signals_message
+from .formatters import (
+    format_cashflow_message,
+    format_portfolio_message,
+    format_signals_message,
+    format_sips_message,
+)
 from .middleware import owner_only
 
 logger = logging.getLogger(__name__)
@@ -233,6 +238,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/portfolio - View current holdings\n"
         "/signals - View today's signals\n"
         "/action_plan - View portfolio action classification\n"
+        "/sips - View active SIP book & quant allocation\n"
+        "/cashflow - View dividend & cashflow projections\n"
         "/watchlist list|add|remove &lt;TICKER&gt; - Manage watchlist\n"
         "/price &lt;TICKER&gt; - Get current stock price\n"
         "/funds - View available funds\n"
@@ -242,6 +249,26 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help - Show this message"
     )
     await update.message.reply_text(help_text, parse_mode='HTML')
+
+@owner_only
+async def sips_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pool = get_pool()
+    async with pool.acquire() as db:
+        rows = await db.fetch("SELECT * FROM sip_book ORDER BY monthly_sip DESC")
+
+    sips = [dict(r) for r in rows]
+    msg = format_sips_message(sips)
+    await update.message.reply_text(msg, parse_mode='HTML')
+
+@owner_only
+async def cashflow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pool = get_pool()
+    async with pool.acquire() as db:
+        rows = await db.fetch("SELECT * FROM dividend_schedule ORDER BY yield_on_cost DESC")
+
+    dividend_rows = [dict(r) for r in rows]
+    msg = format_cashflow_message(dividend_rows)
+    await update.message.reply_text(msg, parse_mode='HTML')
 
 @owner_only
 async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -296,6 +323,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Portfolio", callback_data="portfolio"), InlineKeyboardButton("📈 Signals", callback_data="signals")],
         [InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"), InlineKeyboardButton("💰 Funds", callback_data="funds")],
+        [InlineKeyboardButton("📋 SIP Book", callback_data="sips"), InlineKeyboardButton("💵 Cashflow", callback_data="cashflow")],
         [InlineKeyboardButton("⚙️ Status", callback_data="status")],
     ]
     await update.message.reply_text("Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -309,6 +337,8 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         "signals": signals_command,
         "action_plan": action_plan_command,
         "funds": funds_command,
+        "sips": sips_command,
+        "cashflow": cashflow_command,
         "status": status_command,
     }
     handler = dispatch.get(query.data)
