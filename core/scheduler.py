@@ -79,22 +79,30 @@ async def db_backup_job():
         os.makedirs(backup_dir, exist_ok=True)
 
         today_str = datetime.now().strftime("%Y%m%d")
-        tables = [
-            "holdings_snapshot", "watchlist", "ohlcv_cache", "signals", "job_heartbeats",
-            "session_tokens", "refresh_requests", "stage_history", "stock_actions",
-            "ticker_mapping", "backfill_requests", "data_health", "portfolio_value_history",
-            "stock_metadata",
+        core_tables = [
+            "holdings_snapshot", "watchlist", "sip_book", "stage_history", "stock_actions",
+            "ticker_mapping", "portfolio_value_history", "stock_metadata",
         ]
 
         async with pool.acquire() as db:
-            for table in tables:
+            for table in core_tables:
                 backup_file = os.path.join(backup_dir, f"{table}_{today_str}.csv.gz")
                 if os.path.exists(backup_file):
                     os.remove(backup_file)
                 with gzip.open(backup_file, "wb") as f:
                     await db.copy_from_query(f"SELECT * FROM {table}", output=f, format="csv", header=True)
 
-        logger.info(f"Database backed up to {backup_dir} ({len(tables)} tables)")
+            # Backup only the recent 30 days of OHLCV cache to prevent multi-megabyte egress drain
+            ohlcv_backup = os.path.join(backup_dir, f"ohlcv_cache_30d_{today_str}.csv.gz")
+            if os.path.exists(ohlcv_backup):
+                os.remove(ohlcv_backup)
+            with gzip.open(ohlcv_backup, "wb") as f:
+                await db.copy_from_query(
+                    "SELECT * FROM ohlcv_cache WHERE date >= TO_CHAR(NOW() - INTERVAL '30 days', 'YYYY-MM-DD')",
+                    output=f, format="csv", header=True
+                )
+
+        logger.info(f"Database backed up to {backup_dir}")
 
         # Cleanup backups older than 7 days
         now = time.time()
@@ -114,6 +122,6 @@ def start_scheduler(app: Application):
     scheduler.add_job(market_data_refresh_job, 'interval', minutes=60, args=[app])
 
     scheduler.add_job(db_backup_job, 'cron', hour=23, minute=30, timezone='Asia/Kolkata')
-    scheduler.add_job(process_refresh_requests_job, 'interval', seconds=60, args=[app])
-    scheduler.add_job(process_backfill_requests_job, 'interval', seconds=20, args=[app])
+    scheduler.add_job(process_refresh_requests_job, 'interval', seconds=180, args=[app])
+    scheduler.add_job(process_backfill_requests_job, 'interval', seconds=120, args=[app])
     scheduler.start()

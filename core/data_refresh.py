@@ -326,19 +326,19 @@ async def run_market_data_refresh(app=None, send_digest=False):
 
             # 3. Run Action Classifier
             nifty_rows = await db.fetch(
-                "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = '_NIFTY50' ORDER BY date"
+                "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = '_NIFTY50' ORDER BY date DESC LIMIT 300"
             )
-            nifty_df = pd.DataFrame(nifty_rows, columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
+            nifty_df = pd.DataFrame(list(reversed(nifty_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
 
             action_inserts = []
             stage_inserts = []
             for ticker in list(set(holdings + watchlist)):
                 stock_rows = await db.fetch(
-                    "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = $1 ORDER BY date",
+                    "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = $1 ORDER BY date DESC LIMIT 300",
                     ticker,
                 )
                 if stock_rows:
-                    stock_df = pd.DataFrame(stock_rows, columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
+                    stock_df = pd.DataFrame(list(reversed(stock_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
                     res = get_stock_action(ticker, stock_df, nifty_df, ticker in holdings)
                     action_inserts.append((ticker, res['action'], res['rationale']))
 
@@ -361,6 +361,10 @@ async def run_market_data_refresh(app=None, send_digest=False):
                     ON CONFLICT (stock_code, date) DO UPDATE SET
                         stage=excluded.stage, sma_150=excluded.sma_150, slope=excluded.slope
                 """, stage_inserts)
+
+            # Clean up old signals and heartbeats to conserve database storage and reduce backup egress
+            await db.execute("DELETE FROM signals WHERE timestamp < NOW() - INTERVAL '30 days'")
+            await db.execute("DELETE FROM job_heartbeats WHERE timestamp < NOW() - INTERVAL '7 days'")
 
             # Record heartbeat
             await db.execute("INSERT INTO job_heartbeats (job_name) VALUES ($1)", "run_market_data_refresh")

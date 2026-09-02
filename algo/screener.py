@@ -17,10 +17,11 @@ async def run_screener():
 
         for stock in stocks:
             data = await db.fetch(
-                "SELECT date, close, high, volume FROM ohlcv_cache WHERE stock_code = $1 ORDER BY date ASC", stock
+                "SELECT date, close, high, volume FROM ohlcv_cache WHERE stock_code = $1 ORDER BY date DESC LIMIT 300", stock
             )
             if len(data) < 50:  # Need at least 50 days for basic SMAs
                 continue
+            data = list(reversed(data))
 
             # WARNING: OHLCV processing logic does not currently handle stock splits or bonus issues.
             # This may cause large sudden price jumps/drops that distort technical indicators.
