@@ -35,7 +35,7 @@ services:
     volumes:
       - ./data:/app/data
     ports:
-      - "0.0.0.0:8653:8501"
+      - "127.0.0.1:8653:8501"
     environment:
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?DASHBOARD_PASSWORD must be set in .env}
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL must be set in .env}
