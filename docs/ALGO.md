@@ -33,3 +33,12 @@ This layer aggregates individual stock signals and actions to provide portfolio-
 
 ### ⚠️ Known Limitations
 **Preliminary Backtest Constraints**: The backtest validating the Portfolio Action Classification Engine initially ran with only ~46 trading days of usable history (until the deeper backfill was completed). Consequently, the BUY-signal forward-return figures (-2.1% mean 20-day return in early tests) should be treated as preliminary and unvalidated until run across a statistically significant multi-year market cycle encompassing various regimes.
+
+## 10. Ollama AI Quantitative Analyst & Capital Rotation
+
+Integrated via `core/ai_analyst.py`, PortfolioPi connects over LAN to an Ollama server running on the Mac mini (`192.168.1.39:11434`, model `qwen2.5:7b`).
+
+### Key Capabilities:
+1. **Contextual Signal Synthesis**: Takes the deterministic mathematical vector (Weinstein Stage, Minervini score, Relative Strength, Distribution Days, and Chandelier trailing stop) and translates it into an institutional-grade risk diagnosis.
+2. **Opportunity Cost & Capital Rotation**: Evaluates underperforming holdings (Stage 4 or stop breaches) against high-momentum breakout candidates from the watchlist to maximize forward portfolio CAGR and compounding.
+3. **Resilience & Fallback**: If the Ollama server is offline or unreachable over the LAN, the pipeline catches the timeout and falls back to standard algorithmic text without interrupting Telegram bot or scheduler execution.

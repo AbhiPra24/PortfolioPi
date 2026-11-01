@@ -65,3 +65,55 @@ Keep formatting clean using Telegram HTML tags (<b>, <i>, <code>). Do not invent
     except Exception as e:
         logger.info(f"Ollama server at {base_url} unreachable: {e}. Falling back gracefully.")
         return None
+
+async def generate_opportunity_rotation_analysis(laggards: list, leaders: list) -> str | None:
+    """
+    Synthesizes an active rotation strategy pairing weak/broken holdings
+    with top Stage 2 breakout setups to maximize portfolio CAGR.
+    """
+    base_url = getattr(settings, 'ollama_base_url', 'http://192.168.1.39:11434').rstrip('/')
+    model_name = getattr(settings, 'ollama_model', 'qwen2.5:7b')
+
+    laggard_text = "\n".join([
+        f"- {x['ticker']}: Price ₹{x['price']}, Loss {x.get('pnl_pct', 0):+.1f}%, Stage {x.get('stage')}, Composite Score {x.get('score')}/100, Stop Loss ₹{x.get('stop_loss')}"
+        for x in laggards
+    ])
+    leader_text = "\n".join([
+        f"- {x['ticker']}: Price ₹{x['price']}, Stage {x.get('stage')}, RS {x.get('rs_score')}, TT {x.get('tt_score')}/7, Composite Score {x.get('score')}/100"
+        for x in leaders
+    ])
+
+    prompt = f"""You are the Chief Quantitative Strategist for PortfolioPi.
+Your mandate is to MAXIMIZE long-term portfolio growth by actively pruning capital dragging positions and reallocating into top-tier Stage 2 leaders.
+
+[CURRENT CAPITAL DRAGGERS (LAGGARDS TO PRUNE)]
+{laggard_text}
+
+[TOP WATCHLIST BREAKOUTS (HIGH MOMENTUM LEADERS)]
+{leader_text}
+
+[INSTRUCTIONS]
+Provide a high-conviction Telegram HTML briefing:
+1. <b>Capital Rotations (Pairs)</b>: Pair each laggard with the best breakout leader to maximize risk/reward.
+2. <b>Expected Compounding Impact</b>: Why this swap protects drawdowns and boosts forward portfolio projection.
+3. <b>Immediate Execution Steps</b>: Clear directives for the investor today.
+Use concise bullets and HTML tags (<b>, <code>). Do not invent false prices.
+"""
+
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.2}
+    }
+
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+            async with session.post(f"{base_url}/api/generate", json=payload) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("response", "").strip()
+                return None
+    except Exception as e:
+        logger.info(f"Ollama rotation analysis failed: {e}")
+        return None
