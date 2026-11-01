@@ -4,18 +4,20 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
+import aiosqlite
 import dateutil.parser
 import pandas as pd
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from algo.screener import run_screener
+from app_config import settings
 from bot.broadcaster import broadcast_message
 from bot.formatters import format_portfolio_message, format_signals_message
 from core.breeze_client import BreezeClient, SessionExpiredError
-from core.db import get_pool
 from core.session_store import get_session
 
 logger = logging.getLogger(__name__)
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_historical_with_retry(breeze, stock_code, from_date, to_date):
@@ -27,6 +29,7 @@ def get_historical_with_retry(breeze, stock_code, from_date, to_date):
         exchange_code="NSE",
         product_type="cash"
     )
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_names_with_retry(breeze, stock_code):
@@ -57,8 +60,7 @@ async def run_breeze_sync(app=None, silent=True):
                 await broadcast_message(app, "🚨 Sync Failed: Session expired.")
             return
 
-        pool = get_pool()
-        async with pool.acquire() as db:
+        async with aiosqlite.connect(settings.db_path) as db:
             # 1. Fetch Holdings
             holdings = await asyncio.to_thread(breeze.get_demat_holdings)
             port_holdings = await asyncio.to_thread(breeze.get_portfolio_holding, exchange_code="NSE", from_date="", to_date="")
@@ -94,125 +96,118 @@ async def run_breeze_sync(app=None, silent=True):
                     # Insert or update holding ground truth
                     await db.execute("""
                         INSERT INTO holdings_snapshot (stock_code, quantity, average_price, current_price)
-                        VALUES ($1, $2, $3, 0)
+                        VALUES (?, ?, ?, 0)
                         ON CONFLICT(stock_code) DO UPDATE SET
                             quantity=excluded.quantity,
                             average_price=excluded.average_price
-                    """, stock, data["quantity"], data["average_price"])
+                    """, (stock, data["quantity"], data["average_price"]))
+                await db.commit()
 
                 # Record portfolio history (invested vs current value)
-                totals_row = await db.fetchrow(
-                    "SELECT SUM(quantity * average_price), SUM(quantity * current_price) FROM holdings_snapshot"
-                )
-                if totals_row and totals_row[0] is not None:
-                    total_invested, total_current = totals_row[0], totals_row[1]
+                async with db.execute("SELECT SUM(quantity * average_price), SUM(quantity * current_price) FROM holdings_snapshot") as cur:
+                    totals_row = await cur.fetchone()
+                if totals_row and totals_row[0] is not None and totals_row[1] is not None:
+                    tot_invested, tot_current = totals_row[0], totals_row[1]
                     await db.execute("""
                         INSERT INTO portfolio_value_history (total_invested, total_current_value, total_pnl)
-                        VALUES ($1, $2, $3)
-                    """, total_invested, total_current, total_current - total_invested)
+                        VALUES (?, ?, ?)
+                    """, (tot_invested, tot_current, tot_current - tot_invested))
+                    await db.commit()
 
-            # 2. Fetch Watchlist
-            watchlist_rows = await db.fetch("SELECT stock_code FROM watchlist")
-            watchlist = [row["stock_code"] for row in watchlist_rows]
-
-            all_tickers = list(set(list(holdings_data.keys()) + watchlist))
-
-            # 3. Resolve Mappings Opportunistically
+            # 2. Opportunistic Ticker Mapping
             new_mappings_count = 0
-            for ticker in all_tickers:
-                mapping = await db.fetchrow("SELECT nse_symbol FROM ticker_mapping WHERE stock_code = $1", ticker)
-
+            for ticker in holdings_data.keys():
+                async with db.execute("SELECT nse_symbol FROM ticker_mapping WHERE stock_code = ?", (ticker,)) as cur:
+                    mapping = await cur.fetchone()
                 if not mapping:
                     try:
-                        res = await asyncio.to_thread(get_names_with_retry, breeze, ticker)
-                        if isinstance(res, dict) and res.get("Success"):
-                            success_list = res.get("Success", [])
-                            if success_list:
-                                item = success_list[0]
-                                nse_symbol = item.get("short_name", ticker)  # fallback to ticker if short_name is empty
-                                isin = item.get("isin", "")
+                        names_data = await asyncio.to_thread(get_names_with_retry, breeze, ticker)
+                        if isinstance(names_data, dict) and names_data.get("Success"):
+                            first_match = names_data["Success"][0]
+                            nse_sym = first_match.get("exchange_stock_code") or ticker
+                            isin = first_match.get("isincode") or ""
+                            if nse_sym:
                                 await db.execute("""
-                                    INSERT INTO ticker_mapping (stock_code, nse_symbol, isin) VALUES ($1, $2, $3)
-                                    ON CONFLICT (stock_code) DO UPDATE SET
-                                        nse_symbol=excluded.nse_symbol, isin=excluded.isin
-                                """, ticker, nse_symbol, isin)
+                                    INSERT INTO ticker_mapping (stock_code, nse_symbol, isin) VALUES (?, ?, ?)
+                                    ON CONFLICT (stock_code) DO NOTHING
+                                """, (ticker, nse_sym, isin))
+                                await db.commit()
                                 new_mappings_count += 1
-                                logger.info(f"Resolved mapping for {ticker}: {nse_symbol} ({isin})")
+                                logger.info(f"Resolved new ticker mapping: {ticker} -> {nse_sym}")
                     except Exception as e:
-                        logger.error(f"Failed to resolve mapping for {ticker}: {e}")
-                    await asyncio.sleep(1)
+                        logger.warning(f"Could not resolve mapping for {ticker}: {e}")
 
-            # _NIFTY50 is built-in
-            await db.execute("""
-                INSERT INTO ticker_mapping (stock_code, nse_symbol, isin) VALUES ('_NIFTY50', 'NIFTY 50', '')
-                ON CONFLICT (stock_code) DO NOTHING
-            """)
+            # 3. Incremental OHLCV Backfill via Breeze
+            # Only fetch what is missing to avoid rate limits
+            today_dt = datetime.now()
+            for ticker in list(holdings_data.keys()) + ["_NIFTY50"]:
+                async with db.execute("SELECT MAX(date) FROM ohlcv_cache WHERE stock_code = ?", (ticker,)) as cur:
+                    max_date_row = await cur.fetchone()
+                max_date = max_date_row[0] if max_date_row else None
 
-            all_tickers.append("_NIFTY50")
-
-            # 4. Backfill OHLCV cache (Breeze has better historical depth)
-            for ticker in all_tickers:
-                max_date = await db.fetchval("SELECT MAX(date) FROM ohlcv_cache WHERE stock_code = $1", ticker)
-
-                to_date_dt = datetime.now()
-                to_date_str = to_date_dt.strftime("%Y-%m-%dT00:00:00.000Z")
-
-                if max_date:
-                    try:
-                        from_date_dt = datetime.strptime(max_date, "%Y-%m-%d %H:%M:%S")
-                    except ValueError:
-                        try:
-                            from_date_dt = dateutil.parser.parse(max_date)
-                        except Exception:
-                            from_date_dt = to_date_dt - timedelta(days=365)
-                    from_date_dt += timedelta(days=1)
+                if not max_date:
+                    from_dt = today_dt - timedelta(days=365)
                 else:
-                    from_date_dt = to_date_dt - timedelta(days=365)
+                    try:
+                        from_dt = datetime.strptime(max_date[:10], "%Y-%m-%d")
+                    except Exception:
+                        from_dt = today_dt - timedelta(days=365)
 
-                if from_date_dt > to_date_dt:
-                    continue
+                # Breeze requires string format YYYY-MM-DDTHH:MM:SS.000Z
+                from_dt += timedelta(days=1)
+                if from_dt <= today_dt:
+                    from_str = from_dt.strftime("%Y-%m-%dT00:00:00.000Z")
+                    to_str = today_dt.strftime("%Y-%m-%dT00:00:00.000Z")
 
-                from_date_str = from_date_dt.strftime("%Y-%m-%dT00:00:00.000Z")
-
-                try:
-                    hist_data = await asyncio.to_thread(get_historical_with_retry, breeze, ticker, from_date_str, to_date_str)
-
-                    if isinstance(hist_data, dict) and hist_data.get("Success"):
-                        records = []
-                        for row in hist_data.get("Success", []):
-                            records.append((
-                                ticker,
-                                row.get("datetime"),
-                                float(row.get("open", 0)),
-                                float(row.get("high", 0)),
-                                float(row.get("low", 0)),
-                                float(row.get("close", 0)),
-                                int(row.get("volume", 0))
-                            ))
-                        if records:
-                            await db.executemany("""
-                                INSERT INTO ohlcv_cache
-                                (stock_code, date, open, high, low, close, volume)
-                                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                                ON CONFLICT (stock_code, date) DO NOTHING
-                            """, records)
-                except Exception as e:
-                    logger.error(f"Failed to fetch historical data for {ticker}: {e}")
-                    await db.execute(
-                        "INSERT INTO data_health (stock_code, source, status, message) VALUES ($1, 'breeze', 'failed', $2)",
-                        ticker, str(e),
-                    )
+                    try:
+                        hist_data = await asyncio.to_thread(get_historical_with_retry, breeze, ticker, from_str, to_str)
+                        if isinstance(hist_data, dict) and hist_data.get("Success"):
+                            records = []
+                            for row in hist_data.get("Success", []):
+                                dt = dateutil.parser.parse(row["datetime"])
+                                date_str = dt.strftime("%Y-%m-%d")
+                                records.append((
+                                    ticker,
+                                    date_str,
+                                    float(row["open"]),
+                                    float(row["high"]),
+                                    float(row["low"]),
+                                    float(row["close"]),
+                                    int(row["volume"])
+                                ))
+                            if records:
+                                await db.executemany("""
+                                    INSERT OR IGNORE INTO ohlcv_cache 
+                                    (stock_code, date, open, high, low, close, volume)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, records)
+                                await db.commit()
+                        else:
+                            await db.execute(
+                                "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'breeze', 'failed', ?)",
+                                (ticker, str(hist_data.get("Error") or "No data returned"))
+                            )
+                            await db.commit()
+                    except Exception as e:
+                        logger.error(f"Breeze fetch failed for {ticker}: {e}")
+                        await db.execute(
+                            "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'breeze', 'failed', ?)",
+                            (ticker, str(e))
+                        )
+                        await db.commit()
 
                 await asyncio.sleep(1)
 
-            # 5. Record heartbeat
-            await db.execute("INSERT INTO job_heartbeats (job_name) VALUES ($1)", "run_breeze_sync")
+            # Record heartbeat
+            await db.execute("INSERT INTO job_heartbeats (job_name) VALUES (?)", ("run_breeze_sync",))
+            await db.commit()
 
             if not silent and app:
                 # Return summary to the user if requested (like from /refresh_session)
                 total_holdings = len(holdings_data)
-                total_val = await db.fetchval("SELECT SUM(quantity * current_price) FROM holdings_snapshot")
-                total_val = total_val if total_val else 0.0
+                async with db.execute("SELECT SUM(quantity * current_price) FROM holdings_snapshot") as cur:
+                    total_val_row = await cur.fetchone()
+                total_val = total_val_row[0] if (total_val_row and total_val_row[0]) else 0.0
 
                 msg = f"✅ Session verified.\nPortfolio synced: {total_holdings} holdings, ₹{total_val:,.2f} current value, {new_mappings_count} new tickers mapped."
                 await broadcast_message(app, msg)
@@ -229,10 +224,11 @@ async def _normalize_and_upsert_ohlcv(db, ticker, rows):
         return
     records = [(ticker, r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"]) for r in rows]
     await db.executemany("""
-        INSERT INTO ohlcv_cache (stock_code, date, open, high, low, close, volume)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (stock_code, date) DO NOTHING
+        INSERT OR IGNORE INTO ohlcv_cache (stock_code, date, open, high, low, close, volume)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     """, records)
+    await db.commit()
+
 
 async def backfill_ticker_history(db, ticker, provider, depth_days=1095, chunk_days=90):
     """Chunked historical backfill, provider-agnostic. Used for brand-new tickers
@@ -250,9 +246,11 @@ async def backfill_ticker_history(db, ticker, provider, depth_days=1095, chunk_d
         await asyncio.sleep(1.5)
     return total_rows
 
+
 async def run_market_data_refresh(app=None, send_digest=False):
     """Market data refresh: Uses Breeze if session available, fallback to yfinance."""
     from algo.action_classifier import get_stock_action
+    from algo.screener import run_screener
     from core.breeze_client import BreezeClient, SessionExpiredError
     from core.providers import BreezeProvider, YFinanceProvider
     from core.session_store import get_session
@@ -266,32 +264,41 @@ async def run_market_data_refresh(app=None, send_digest=False):
             breeze = BreezeClient(token)
             provider = BreezeProvider(breeze)
             source_name = "breeze"
+            logger.info("Using BreezeProvider for Market Data Refresh.")
         except SessionExpiredError:
-            logger.info("Breeze session expired, falling back to yfinance")
+            logger.info("Breeze session expired. Using YFinanceProvider for Market Data Refresh.")
+    else:
+        logger.info("No Breeze session. Using YFinanceProvider for Market Data Refresh.")
 
-    logger.info(f"Starting run_market_data_refresh ({source_name})")
     try:
-        pool = get_pool()
-        async with pool.acquire() as db:
-            holdings_rows = await db.fetch("SELECT stock_code FROM holdings_snapshot")
-            holdings = [r["stock_code"] for r in holdings_rows]
-            watchlist_rows = await db.fetch("SELECT stock_code FROM watchlist")
-            watchlist = [r["stock_code"] for r in watchlist_rows]
+        async with aiosqlite.connect(settings.db_path) as db:
+            # 1. Fetch active targets: holdings + watchlist + index
+            async with db.execute("SELECT stock_code FROM holdings_snapshot") as cur:
+                holdings = [r[0] for r in await cur.fetchall()]
+            async with db.execute("SELECT stock_code FROM watchlist") as cur:
+                watchlist = [r[0] for r in await cur.fetchall()]
 
             all_tickers = list(set(holdings + watchlist + ["_NIFTY50"]))
 
+            # Refresh OHLCV incremental
             for ticker in all_tickers:
-                max_date = await db.fetchval("SELECT MAX(date) FROM ohlcv_cache WHERE stock_code = $1", ticker)
+                async with db.execute("SELECT MAX(date) FROM ohlcv_cache WHERE stock_code = ?", (ticker,)) as cur:
+                    max_date_row = await cur.fetchone()
+                max_date = max_date_row[0] if max_date_row else None
 
-                if max_date is None:
+                if not max_date:
+                    # Never fetched before — do a full 3-year chunked backfill
+                    logger.info(f"Zero OHLCV rows for {ticker} — triggering full backfill via {source_name}...")
                     try:
-                        await backfill_ticker_history(db, ticker, provider)
+                        n = await backfill_ticker_history(db, ticker, provider)
+                        logger.info(f"Backfilled {n} rows for {ticker}")
                     except Exception as e:
-                        logger.error(f"{source_name} backfill failed for {ticker}: {e}")
+                        logger.error(f"Backfill failed for {ticker}: {e}")
                         await db.execute(
-                            "INSERT INTO data_health (stock_code, source, status, message) VALUES ($1, $2, 'failed', $3)",
-                            ticker, source_name, str(e),
+                            "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, ?, 'failed', ?)",
+                            (ticker, source_name, str(e))
                         )
+                        await db.commit()
                 else:
                     try:
                         from_dt = datetime.strptime(max_date[:10], "%Y-%m-%d")
@@ -306,18 +313,20 @@ async def run_market_data_refresh(app=None, send_digest=False):
                         except Exception as e:
                             logger.error(f"{source_name} fetch failed for {ticker}: {e}")
                             await db.execute(
-                                "INSERT INTO data_health (stock_code, source, status, message) VALUES ($1, $2, 'failed', $3)",
-                                ticker, source_name, str(e),
+                                "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, ?, 'failed', ?)",
+                                (ticker, source_name, str(e))
                             )
+                            await db.commit()
 
                 # Keep current_price fresh for the Portfolio auto-refresh (holdings only).
                 if ticker in holdings:
                     quote = await asyncio.to_thread(provider.get_quote, ticker)
                     if quote and quote.get("ltp"):
                         await db.execute(
-                            "UPDATE holdings_snapshot SET current_price = $1, timestamp = NOW() WHERE stock_code = $2",
-                            quote["ltp"], ticker,
+                            "UPDATE holdings_snapshot SET current_price = ?, timestamp = CURRENT_TIMESTAMP WHERE stock_code = ?",
+                            (quote["ltp"], ticker),
                         )
+                        await db.commit()
 
                 await asyncio.sleep(1)
 
@@ -325,18 +334,20 @@ async def run_market_data_refresh(app=None, send_digest=False):
             signals = await run_screener()
 
             # 3. Run Action Classifier
-            nifty_rows = await db.fetch(
+            async with db.execute(
                 "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = '_NIFTY50' ORDER BY date DESC LIMIT 300"
-            )
+            ) as cur:
+                nifty_rows = await cur.fetchall()
             nifty_df = pd.DataFrame(list(reversed(nifty_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
 
             action_inserts = []
             stage_inserts = []
             for ticker in list(set(holdings + watchlist)):
-                stock_rows = await db.fetch(
-                    "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = $1 ORDER BY date DESC LIMIT 300",
-                    ticker,
-                )
+                async with db.execute(
+                    "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = ? ORDER BY date DESC LIMIT 300",
+                    (ticker,),
+                ) as cur:
+                    stock_rows = await cur.fetchall()
                 if stock_rows:
                     stock_df = pd.DataFrame(list(reversed(stock_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
                     res = get_stock_action(ticker, stock_df, nifty_df, ticker in holdings)
@@ -347,32 +358,31 @@ async def run_market_data_refresh(app=None, send_digest=False):
                     stage_inserts.append((ticker, date_str, res['stage'], res['sma_150'], res['slope']))
 
             if action_inserts:
-                async with db.transaction():
-                    await db.execute("DELETE FROM stock_actions")
-                    await db.executemany(
-                        "INSERT INTO stock_actions (stock_code, action, rationale) VALUES ($1, $2, $3)",
-                        action_inserts,
-                    )
+                await db.execute("DELETE FROM stock_actions")
+                await db.executemany(
+                    "INSERT INTO stock_actions (stock_code, action, rationale) VALUES (?, ?, ?)",
+                    action_inserts,
+                )
 
             if stage_inserts:
                 await db.executemany("""
-                    INSERT INTO stage_history (stock_code, date, stage, sma_150, slope)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (stock_code, date) DO UPDATE SET
-                        stage=excluded.stage, sma_150=excluded.sma_150, slope=excluded.slope
+                    INSERT OR REPLACE INTO stage_history (stock_code, date, stage, sma_150, slope)
+                    VALUES (?, ?, ?, ?, ?)
                 """, stage_inserts)
 
             # Clean up old signals and heartbeats to conserve database storage and reduce backup egress
-            await db.execute("DELETE FROM signals WHERE timestamp < NOW() - INTERVAL '30 days'")
-            await db.execute("DELETE FROM job_heartbeats WHERE timestamp < NOW() - INTERVAL '7 days'")
+            await db.execute("DELETE FROM signals WHERE timestamp < datetime('now', '-30 days')")
+            await db.execute("DELETE FROM job_heartbeats WHERE timestamp < datetime('now', '-7 days')")
+            await db.commit()
 
             # Record heartbeat
-            await db.execute("INSERT INTO job_heartbeats (job_name) VALUES ($1)", "run_market_data_refresh")
+            await db.execute("INSERT INTO job_heartbeats (job_name) VALUES (?)", ("run_market_data_refresh",))
+            await db.commit()
 
             # 4. Format HTML digest and broadcast ONLY IF requested (daily digest)
             if send_digest and app:
-                holdings_rows2 = await db.fetch("SELECT stock_code, quantity, average_price, current_price FROM holdings_snapshot")
-                holdings_list = [{"stock_code": r["stock_code"], "quantity": r["quantity"], "average_price": r["average_price"], "current_price": r["current_price"]} for r in holdings_rows2]
+                async with db.execute("SELECT stock_code, quantity, average_price, current_price FROM holdings_snapshot") as cur:
+                    holdings_list = [{"stock_code": r[0], "quantity": r[1], "average_price": r[2], "current_price": r[3]} for r in await cur.fetchall()]
 
                 port_msg = format_portfolio_message(holdings_list)
                 sig_msg = format_signals_message(signals)

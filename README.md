@@ -25,13 +25,14 @@ flowchart TD
             STREAMLIT["📊 Streamlit Dashboard\nPortfolio · Watchlist & Signals\nHistorical Charts · Action Plan\nSession Status · Portfolio Analyser"]
         end
 
-        DB[("🗄️ Supabase\n(hosted Postgres)\n─────────────\nholdings_snapshot · signals\nstock_actions · ohlcv_cache\njob_heartbeats · data_health\nsession_tokens · stage_history\nportfolio_value_history\nbackfill_requests · refresh_requests\nstock_metadata · ticker_mapping\nwatchlist")]
+        DB[("🗄️ SQLite Database\n(data/portfoliopi.db)\n─────────────\nholdings_snapshot · signals\nstock_actions · ohlcv_cache\njob_heartbeats · data_health\nsession_tokens · stage_history\nportfolio_value_history\nbackfill_requests · refresh_requests\nstock_metadata · ticker_mapping\nsip_book · dividend_schedule\nwatchlist")]
     end
 
     subgraph EXTERNAL["☁️ External"]
         TG["Telegram API\napi.telegram.org"]
         BREEZEAPI["ICICI Breeze Connect API\napi.icicidirect.com\n(read-only: no order placement)"]
         YF["Yahoo Finance\nvia yfinance\n(fallback when Breeze session expired)"]
+        OLLAMA["Ollama AI Analyst\n(192.168.1.39:11434 / qwen2.5:7b)"]
     end
 
     %% User interaction
@@ -41,6 +42,7 @@ flowchart TD
     %% Bot internals
     TGBOT --> SCHED
     TGBOT -->|"/refresh_session <token>"| BREEZE
+    TGBOT -->|"/analyse <ticker>"| OLLAMA
     SCHED --> REFRESH
     REFRESH --> BREEZE
     REFRESH -->|"session expired"| YF
@@ -52,11 +54,11 @@ flowchart TD
     BREEZEAPI -->|"redirect w/ token"| CALLBACK
 
     %% Dashboard
-    DB -->|"psycopg2 pool"| STREAMLIT
+    DB -->|"sqlite3 (read-only)"| STREAMLIT
     STREAMLIT -->|"password-gated,\nno reverse proxy"| USER
 
     %% Bot DB access
-    TGBOT -->|"asyncpg pool"| DB
+    TGBOT -->|"aiosqlite (WAL mode)"| DB
 
     classDef container fill:#1e3a5f,stroke:#4a9eff,color:#fff
     classDef db fill:#2d4a1e,stroke:#6abf4b,color:#fff
@@ -68,7 +70,7 @@ flowchart TD
     class EXTERNAL external
 ```
 
-Both the bot and dashboard connect directly to a hosted Supabase Postgres instance (not a local file) — `asyncpg` on the bot side, `psycopg2` on the dashboard side. This means the database is reachable and editable from anywhere, not just from the Pi. Unlike OverwatcherPI, the dashboard is exposed on `0.0.0.0:8653` directly (password-gated) rather than behind a reverse proxy.
+The bot and dashboard operate against a local SQLite database (`data/portfoliopi.db`) in WAL mode — `aiosqlite` for asynchronous bot operations and `sqlite3` for the synchronous Streamlit dashboard. AI stock analysis is enriched on-demand via a local Ollama server running `qwen2.5:7b`. Unlike OverwatcherPI, the dashboard is exposed on `0.0.0.0:8653` directly (password-gated) rather than behind a reverse proxy.
 
 ## Setup & Deployment
 

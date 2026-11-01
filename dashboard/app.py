@@ -8,7 +8,7 @@ st.set_page_config(page_title="PortfolioPi", layout="wide")
 if "apisession" in st.query_params:
     new_token = st.query_params["apisession"]
     execute_db("DELETE FROM session_tokens")
-    execute_db("INSERT INTO session_tokens (token) VALUES (%s)", (new_token,))
+    execute_db("INSERT INTO session_tokens (token) VALUES (?)", (new_token,))
     st.success("Successfully updated ICICI Breeze API Token from redirect!")
     st.query_params.clear()
 

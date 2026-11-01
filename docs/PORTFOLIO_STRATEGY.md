@@ -1,7 +1,7 @@
 # Portfolio Strategy, Rebalancing & Dividend Allocation Plan
 
 > **Date Generated**: October 19, 2026  
-> **Source Data**: Supabase PostgreSQL (`holdings_snapshot`, `ohlcv_cache`, `stock_actions`, `portfolio_value_history`)  
+> **Source Data**: Local SQLite (`holdings_snapshot`, `ohlcv_cache`, `stock_actions`, `portfolio_value_history`)  
 > **Frameworks**: Stan Weinstein Stage Analysis, Mark Minervini Trend Template, Finance-Guru Fail-Closed Guardrails, EigenLedger MPT Optimization, and Dividend Yield Analysis.
 
 ---

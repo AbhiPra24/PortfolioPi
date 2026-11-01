@@ -1,24 +1,25 @@
 """Tactical screener execution pipeline for daily technical setups."""
 
+import aiosqlite
 import pandas as pd
 
-from core.db import get_pool
-
+from app_config import settings
 from .indicators import calculate_macd, calculate_rsi, calculate_sma, proximity_to_52w_high, volume_spike
 
 
 async def run_screener():
     signals_data = []
-    pool = get_pool()
-    async with pool.acquire() as db:
+    async with aiosqlite.connect(settings.db_path) as db:
         # Get unique stock codes from holdings and watchlist
-        rows = await db.fetch("SELECT stock_code FROM holdings_snapshot UNION SELECT stock_code FROM watchlist")
-        stocks = [row["stock_code"] for row in rows]
+        async with db.execute("SELECT stock_code FROM holdings_snapshot UNION SELECT stock_code FROM watchlist") as cursor:
+            rows = await cursor.fetchall()
+            stocks = [row[0] for row in rows]
 
         for stock in stocks:
-            data = await db.fetch(
-                "SELECT date, close, high, volume FROM ohlcv_cache WHERE stock_code = $1 ORDER BY date DESC LIMIT 300", stock
-            )
+            async with db.execute(
+                "SELECT date, close, high, volume FROM ohlcv_cache WHERE stock_code = ? ORDER BY date DESC LIMIT 300", (stock,)
+            ) as cur:
+                data = await cur.fetchall()
             if len(data) < 50:  # Need at least 50 days for basic SMAs
                 continue
             data = list(reversed(data))
@@ -66,8 +67,9 @@ async def run_screener():
         # Insert signals
         if signals_data:
             await db.executemany("""
-                INSERT INTO signals
+                INSERT INTO signals 
                 (stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, signals_data)
+            await db.commit()
     return signals_data

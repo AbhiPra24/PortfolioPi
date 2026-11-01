@@ -1,5 +1,7 @@
 .env
 data/
+data/*.db
+data/*.sqlite
 logs/
 __pycache__/
 *.pyc
@@ -8,4 +10,11 @@ __pycache__/
 .idea/
 .vscode/
 .DS_Store
+backups/*.db
+backups/*.json
+backups/*.sql
+backups/*.dump
+*.db
+*.sqlite
+
 

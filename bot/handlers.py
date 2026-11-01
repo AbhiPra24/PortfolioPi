@@ -1,15 +1,17 @@
 """Telegram bot command handlers for processing user requests."""
 
+import html
 import logging
+import sqlite3
 
-import asyncpg
+import aiosqlite
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from app_config import settings
+from core.ai_analyst import generate_ai_analysis
 from core.breeze_client import BreezeClient
-from core.db import get_pool
 from core.session_store import get_session, save_session
-
 from .formatters import (
     format_cashflow_message,
     format_portfolio_message,
@@ -19,6 +21,7 @@ from .formatters import (
 from .middleware import owner_only
 
 logger = logging.getLogger(__name__)
+
 
 async def get_breeze_client() -> BreezeClient | None:
     token = await get_session()
@@ -30,6 +33,7 @@ async def get_breeze_client() -> BreezeClient | None:
         logger.error(f"Failed to init breeze client: {e}")
         return None
 
+
 @owner_only
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
@@ -39,29 +43,33 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode='HTML')
 
+
 @owner_only
 async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pool = get_pool()
-    async with pool.acquire() as db:
-        rows = await db.fetch("SELECT * FROM holdings_snapshot ORDER BY timestamp DESC LIMIT 50")
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM holdings_snapshot ORDER BY timestamp DESC LIMIT 50") as cur:
+            rows = await cur.fetchall()
 
     holdings = [dict(row) for row in rows]
     msg = format_portfolio_message(holdings)
     await update.message.reply_text(msg, parse_mode='HTML')
 
+
 @owner_only
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pool = get_pool()
-    async with pool.acquire() as db:
-        rows = await db.fetch("""
-            SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score
-            FROM signals
-            WHERE timestamp >= NOW() - INTERVAL '1 day'
+    async with aiosqlite.connect(settings.db_path) as db:
+        async with db.execute("""
+            SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score 
+            FROM signals 
+            WHERE timestamp >= datetime('now', '-1 day')
             ORDER BY composite_score DESC LIMIT 10
-        """)
+        """) as cur:
+            rows = await cur.fetchall()
 
     msg = format_signals_message(rows)
     await update.message.reply_text(msg, parse_mode='HTML')
+
 
 @owner_only
 async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,13 +87,13 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.", parse_mode='HTML')
 
             import asyncio
-
             from core.data_refresh import run_breeze_sync
             asyncio.create_task(run_breeze_sync(context.application, silent=False))
         else:
             await update.message.reply_text(f"<b>Failed to validate token.</b> API Response: {details.get('Error', 'Unknown error')}", parse_mode='HTML')
     except Exception as e:
         await update.message.reply_text(f"<b>Error validating token:</b> {e}", parse_mode='HTML')
+
 
 @owner_only
 async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,15 +102,15 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     action = context.args[0].lower()
-    pool = get_pool()
 
     if action == "list":
-        async with pool.acquire() as db:
-            rows = await db.fetch("SELECT stock_code FROM watchlist")
+        async with aiosqlite.connect(settings.db_path) as db:
+            async with db.execute("SELECT stock_code FROM watchlist") as cur:
+                rows = await cur.fetchall()
         if not rows:
             await update.message.reply_text("Watchlist is empty.", parse_mode='HTML')
             return
-        msg = "<b>Watchlist:</b>\n" + "\n".join([f"- <code>{r['stock_code']}</code>" for r in rows])
+        msg = "<b>Watchlist:</b>\n" + "\n".join([f"- <code>{r[0]}</code>" for r in rows])
         await update.message.reply_text(msg, parse_mode='HTML')
         return
 
@@ -124,35 +132,33 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"Validation failed for <code>{ticker}</code>. It might not be a valid NSE stock.", parse_mode='HTML')
                 return
         except Exception as e:
-            await update.message.reply_text(f"Validation failed for <code>{ticker}</code>: {e}", parse_mode='HTML')
-            return
+            logger.error(f"Error validating ticker {ticker}: {e}")
 
-        async with pool.acquire() as db:
-            try:
-                await db.execute("INSERT INTO watchlist (stock_code) VALUES ($1)", ticker)
-                await update.message.reply_text(f"Added <code>{ticker}</code> to watchlist. Starting backfill...", parse_mode='HTML')
+        try:
+            async with aiosqlite.connect(settings.db_path) as db:
+                await db.execute("INSERT INTO watchlist (stock_code) VALUES (?)", (ticker,))
+                await db.commit()
 
-                async def run_backfill():
-                    from core.data_refresh import backfill_ticker_history
-                    from core.providers import YFinanceProvider
-                    conn_pool = get_pool()
-                    async with conn_pool.acquire() as conn:
-                        try:
-                            await backfill_ticker_history(conn, ticker, YFinanceProvider())
-                        except Exception as e:
-                            logger.error(f"Watchlist add background backfill failed for {ticker}: {e}")
+            # Queue auto-backfill request for the new ticker (Phase 3)
+            async with aiosqlite.connect(settings.db_path) as db:
+                await db.execute("INSERT INTO backfill_requests (stock_code) VALUES (?)", (ticker,))
+                await db.commit()
 
-                import asyncio
-                asyncio.create_task(run_backfill())
-            except asyncpg.UniqueViolationError:
-                await update.message.reply_text(f"<code>{ticker}</code> is already in watchlist.", parse_mode='HTML')
+            await update.message.reply_text(
+                f"Added <code>{ticker}</code> to watchlist! Triggered historical backfill in background.",
+                parse_mode='HTML'
+            )
+        except sqlite3.IntegrityError:
+            await update.message.reply_text(f"<code>{ticker}</code> is already in watchlist.", parse_mode='HTML')
 
     elif action == "remove":
-        async with pool.acquire() as db:
-            await db.execute("DELETE FROM watchlist WHERE stock_code = $1", ticker)
-            await update.message.reply_text(f"Removed <code>{ticker}</code> from watchlist.", parse_mode='HTML')
+        async with aiosqlite.connect(settings.db_path) as db:
+            await db.execute("DELETE FROM watchlist WHERE stock_code = ?", (ticker,))
+            await db.commit()
+        await update.message.reply_text(f"Removed <code>{ticker}</code> from watchlist.", parse_mode='HTML')
     else:
         await update.message.reply_text("Unknown action. Use add, remove, or list.", parse_mode='HTML')
+
 
 @owner_only
 async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -162,73 +168,90 @@ async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticker = context.args[0].upper()
 
     breeze = await get_breeze_client()
-    if not breeze:
-        await update.message.reply_text("Could not init Breeze client.", parse_mode='HTML')
-        return
+    if breeze:
+        try:
+            quote = breeze.get_quotes(stock_code=ticker, exchange_code="NSE", product_type="cash")
+            if quote.get("Success"):
+                data = quote["Success"][0]
+                ltp = data.get("ltp")
+                change = data.get("change")
+                msg = f"<b>{ticker}</b>: ₹{ltp}"
+                if change:
+                    msg += f" ({change}%)"
+                await update.message.reply_text(msg, parse_mode='HTML')
+                return
+        except Exception as e:
+            logger.warning(f"Breeze quote failed for {ticker}, falling back to yfinance: {e}")
 
-    try:
-        res = breeze.get_quotes(stock_code=ticker, exchange_code="NSE", product_type="cash")
-        if res.get("Success") and len(res["Success"]) > 0:
-            data = res["Success"][0]
-            ltp = data.get("ltp", "N/A")
-            change = data.get("change", "N/A")
-            await update.message.reply_text(f"<b>{ticker}</b>: ₹{ltp} ({change})", parse_mode='HTML')
-        else:
-            await update.message.reply_text(f"Could not fetch price for <code>{ticker}</code>. Response: {res}", parse_mode='HTML')
-    except Exception as e:
-        await update.message.reply_text(f"Error fetching price: {e}", parse_mode='HTML')
+    # Fallback to yfinance
+    from core.providers import YFinanceProvider
+    provider = YFinanceProvider()
+    quote = provider.get_quote(ticker)
+    if quote:
+        msg = f"<b>{ticker}</b>: ₹{quote['ltp']}"
+        if quote.get("change") is not None:
+            msg += f" ({quote['change']:+.2f}%)"
+        await update.message.reply_text(msg, parse_mode='HTML')
+    else:
+        await update.message.reply_text(f"Could not fetch price for <code>{ticker}</code>.", parse_mode='HTML')
+
 
 @owner_only
 async def funds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     breeze = await get_breeze_client()
     if not breeze:
-        await update.message.reply_text("Could not init Breeze client.", parse_mode='HTML')
+        await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode='HTML')
         return
 
-    try:
-        res = breeze.get_funds()
-        if res.get("Success"):
-            msg = "<b>Funds Summary:</b>\n"
-            for fund in res["Success"]:
-                msg += f"Total Limit: ₹{fund.get('TotalLimit', 'N/A')}\n"
-                msg += f"Available Limit: ₹{fund.get('AvailableLimit', 'N/A')}\n"
-                msg += f"Allocated Funds: ₹{fund.get('AllocatedFunds', 'N/A')}\n"
-            await update.message.reply_text(msg, parse_mode='HTML')
-        else:
-            await update.message.reply_text(f"Failed to fetch funds. {res}", parse_mode='HTML')
-    except Exception as e:
-        await update.message.reply_text(f"Error fetching funds: {e}", parse_mode='HTML')
+    funds = breeze.get_funds()
+    if funds.get("Success"):
+        data = funds["Success"]
+        msg = (
+            "<b>Account Funds / Margin:</b>\n"
+            f"Available Margin: ₹{data.get('bank_balance', 'N/A')}\n"
+            f"Allocated Amount: ₹{data.get('allocated_amount', 'N/A')}\n"
+            f"Block Amount: ₹{data.get('block_amount', 'N/A')}"
+        )
+        await update.message.reply_text(msg, parse_mode='HTML')
+    else:
+        await update.message.reply_text(f"Failed to fetch funds: {funds.get('Error', 'Unknown error')}", parse_mode='HTML')
+
 
 @owner_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pool = get_pool()
-    async with pool.acquire() as db:
-        heartbeats = await db.fetch("SELECT job_name, timestamp FROM job_heartbeats ORDER BY timestamp DESC LIMIT 5")
-        session_row = await db.fetchrow("SELECT timestamp FROM session_tokens LIMIT 1")
-        failures = await db.fetch("SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5")
+    async with aiosqlite.connect(settings.db_path) as db:
+        async with db.execute("SELECT job_name, timestamp FROM job_heartbeats ORDER BY timestamp DESC LIMIT 5") as cur:
+            heartbeats = await cur.fetchall()
+
+        async with db.execute("SELECT timestamp FROM session_tokens LIMIT 1") as cur:
+            session_row = await cur.fetchone()
+
+        async with db.execute("SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5") as cur:
+            failures = await cur.fetchall()
 
     msg = "<b>System Status</b>\n\n"
 
     if session_row:
-        msg += f"<b>Session Last Updated:</b> {session_row['timestamp']}\n"
+        msg += f"<b>Session Last Updated:</b> {session_row[0]}\n"
     else:
         msg += "<b>Session:</b> Not set\n"
 
     msg += "\n<b>Recent Job Heartbeats:</b>\n"
     if heartbeats:
         for hb in heartbeats:
-            msg += f"- <code>{hb['job_name']}</code>: {hb['timestamp']}\n"
+            msg += f"- <code>{hb[0]}</code>: {hb[1]}\n"
     else:
         msg += "No recent heartbeats found.\n"
 
     msg += "\n<b>Recent Data Health Issues:</b>\n"
     if failures:
         for f in failures:
-            msg += f"- ⚠️ <code>{f['stock_code']}</code> ({f['source']}): {f['message']} at {f['timestamp']}\n"
+            msg += f"- ⚠️ <code>{f[0]}</code> ({f[1]}): {f[2]} at {f[3]}\n"
     else:
         msg += "No recent data-fetch failures.\n"
 
     await update.message.reply_text(msg, parse_mode='HTML')
+
 
 @owner_only
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -245,36 +268,41 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/funds - View available funds\n"
         "/status - View system status\n"
         "/refresh_session &lt;token&gt; - Update Breeze API session\n"
-        "/analyse &lt;TICKER&gt; - Get technicals and action guidance\n"
+        "/analyse &lt;TICKER&gt; - Get technicals, AI analyst, and action guidance\n"
         "/help - Show this message"
     )
     await update.message.reply_text(help_text, parse_mode='HTML')
 
+
 @owner_only
 async def sips_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pool = get_pool()
-    async with pool.acquire() as db:
-        rows = await db.fetch("SELECT * FROM sip_book ORDER BY monthly_sip DESC")
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM sip_book ORDER BY monthly_sip DESC") as cur:
+            rows = await cur.fetchall()
 
     sips = [dict(r) for r in rows]
     msg = format_sips_message(sips)
     await update.message.reply_text(msg, parse_mode='HTML')
 
+
 @owner_only
 async def cashflow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pool = get_pool()
-    async with pool.acquire() as db:
-        rows = await db.fetch("SELECT * FROM dividend_schedule ORDER BY yield_on_cost DESC")
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM dividend_schedule ORDER BY yield_on_cost DESC") as cur:
+            rows = await cur.fetchall()
 
     dividend_rows = [dict(r) for r in rows]
     msg = format_cashflow_message(dividend_rows)
     await update.message.reply_text(msg, parse_mode='HTML')
 
+
 @owner_only
 async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pool = get_pool()
-    async with pool.acquire() as db:
-        rows = await db.fetch("SELECT stock_code, action, rationale FROM stock_actions ORDER BY action")
+    async with aiosqlite.connect(settings.db_path) as db:
+        async with db.execute("SELECT stock_code, action, rationale FROM stock_actions ORDER BY action") as cur:
+            rows = await cur.fetchall()
 
     if not rows:
         await update.message.reply_text("No action plan data available.", parse_mode='HTML')
@@ -282,13 +310,14 @@ async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     msg = "<b>Portfolio Action Plan:</b>\n"
     for r in rows:
-        if r['action'] != "HOLD":
-            msg += f"\n<b>{r['stock_code']}</b>: {r['action']}\n<i>{r['rationale']}</i>\n"
+        if r[1] != "HOLD":
+            msg += f"\n<b>{r[0]}</b>: {r[1]}\n<i>{r[2]}</i>\n"
 
     if len(msg) > 4000:
         msg = msg[:4000] + "\n... (truncated)"
 
     await update.message.reply_text(msg, parse_mode='HTML')
+
 
 @owner_only
 async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,10 +326,12 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     ticker = context.args[0].upper()
 
-    pool = get_pool()
-    async with pool.acquire() as db:
-        signal_row = await db.fetchrow("SELECT * FROM signals WHERE stock_code = $1 ORDER BY timestamp DESC LIMIT 1", ticker)
-        action_row = await db.fetchrow("SELECT * FROM stock_actions WHERE stock_code = $1", ticker)
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM signals WHERE stock_code = ? ORDER BY timestamp DESC LIMIT 1", (ticker,)) as cur:
+            signal_row = await cur.fetchone()
+        async with db.execute("SELECT * FROM stock_actions WHERE stock_code = ?", (ticker,)) as cur:
+            action_row = await cur.fetchone()
 
     breeze = await get_breeze_client()
     if breeze:
@@ -316,7 +347,19 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from .formatters import format_stock_analysis_message
     msg = format_stock_analysis_message(ticker, signal_row, action_row, quote)
+
+    # Enrich with AI analyst assessment from Ollama
+    metrics = {
+        "quote": quote,
+        "signal": dict(signal_row) if signal_row else {},
+        "action": dict(action_row) if action_row else {},
+    }
+    ai_commentary = await generate_ai_analysis(ticker, metrics)
+    if ai_commentary:
+        msg += f"\n\n🤖 <b>AI Analyst Commentary:</b>\n{html.escape(ai_commentary)}"
+
     await update.message.reply_text(msg, parse_mode='HTML')
+
 
 @owner_only
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -327,6 +370,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⚙️ Status", callback_data="status")],
     ]
     await update.message.reply_text("Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
+
 
 @owner_only
 async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

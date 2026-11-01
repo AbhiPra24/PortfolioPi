@@ -151,7 +151,7 @@ else:
         if bench_returns is not None and not bench_returns.empty:
             betas = []
             for stock in df['Stock Code'].head(15):
-                rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = %s ORDER BY date ASC", (stock,))
+                rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = ? ORDER BY date ASC", (stock,))
                 if rows and len(rows) > 30:
                     s_df = pd.DataFrame(rows, columns=['date', 'close'])
                     s_df['date'] = pd.to_datetime(s_df['date'], format='mixed')
@@ -178,7 +178,7 @@ else:
     top_stocks = df.nlargest(10, 'Current Value')['Stock Code'].tolist()
     price_dict = {}
     for s in top_stocks:
-        s_rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = %s ORDER BY date ASC", (s,))
+        s_rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = ? ORDER BY date ASC", (s,))
         if s_rows and len(s_rows) >= 30:
             s_s = pd.DataFrame(s_rows, columns=['date', 'close']).drop_duplicates('date').set_index('date')['close']
             price_dict[s] = s_s
