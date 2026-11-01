@@ -195,6 +195,10 @@ async def init_db():
             )
         """)
 
+        # Ensure critical unique constraints / indexes exist for upserts
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_holdings_snapshot_stock_code ON holdings_snapshot(stock_code);")
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_mapping_stock_code ON ticker_mapping(stock_code);")
+
         await db.commit()
 
     logger.info("Database tables initialized.")
