@@ -3,18 +3,17 @@
 # PortfolioPi AI Analyst & Screener Dispatcher (Local Mac or Remote RasPi)
 #
 # Runs any of the Ollama-powered portfolio audit scripts against:
-#   - Local SQLite database & local Ollama
+#   - Local SQLite database & local Ollama (:11434) with agy fallback
 #   - Remote Raspberry Pi (via SSH: 192.168.1.31 / 'raspi')
-#   - OmniRoute / Remote Ollama (:20128 or :11434)
+#   - Direct RasPi Ollama (:11434)
 # ==============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMMAND="${1:-state}"
-TARGET="${2:-local}"
 
 usage() {
+    local exit_code="${1:-1}"
     echo "Usage: $0 [command] [target] [extra_args...]"
     echo ""
     echo "Commands:"
@@ -23,30 +22,49 @@ usage() {
     echo "  cashflow    - Run dividend yield & SIP pacing review (analyse_cashflow.py)"
     echo "  ask         - Open interactive natural language assistant (ask_portfolio.py)"
     echo "  scan        - Run Screener.in market scraper & price indexer (scan_screener.py)"
+    echo "  rebalance   - Run daily portfolio rebalance engine (daily_portfolio_rebalancer.py)"
     echo ""
     echo "Targets:"
-    echo "  local       - Run locally using local SQLite & local Ollama (default)"
-    echo "  raspi       - Execute directly on remote Raspberry Pi via SSH"
-    echo "  omniroute   - Run locally but direct inference to RasPi OmniRoute (http://192.168.1.31:20128)"
-    echo "  raspi-ollama- Run locally but direct inference to RasPi Ollama (http://192.168.1.31:11434)"
+    echo "  local        - Run locally using local SQLite & local Ollama (:11434), falling back to agy (default)"
+    echo "  raspi        - Execute directly on remote Raspberry Pi via SSH"
+    echo "  raspi-ollama - Run locally but send inference to RasPi Ollama (http://192.168.1.31:11434)"
     echo ""
     echo "Examples:"
     echo "  ./scripts/run_ai_analyst.sh state"
     echo "  ./scripts/run_ai_analyst.sh signals"
+    echo "  ./scripts/run_ai_analyst.sh rebalance"
     echo "  ./scripts/run_ai_analyst.sh scan local --screen golden-crossover --live"
     echo "  ./scripts/run_ai_analyst.sh scan local --screen fii-buying --ai"
     echo "  ./scripts/run_ai_analyst.sh state raspi"
-    exit 1
+    exit "$exit_code"
 }
+
+if [[ "$1" == "-h" || "$1" == "--help" || "$1" == "help" ]]; then
+    usage 0
+fi
+
+COMMAND="state"
+if [[ $# -ge 1 && ! "$1" =~ ^- ]]; then
+    COMMAND="$1"
+    shift
+fi
+
+TARGET="local"
+if [[ $# -ge 1 && ! "$1" =~ ^- ]]; then
+    TARGET="$1"
+    shift
+fi
 
 case "$TARGET" in
     local)
         OLLAMA_URL="${OLLAMA_BASE_URL:-http://localhost:11434}"
         DB_PATH="${SQLITE_DB_PATH:-data/portfoliopi.db}"
-        ;;
-    omniroute)
-        OLLAMA_URL="http://192.168.1.31:20128"
-        DB_PATH="${SQLITE_DB_PATH:-data/portfoliopi.db}"
+        if ! curl -s --max-time 1 "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
+            if command -v agy >/dev/null 2>&1; then
+                export AGY_FALLBACK=1
+                echo "[*] Local Ollama ($OLLAMA_URL) unavailable; falling back to agy."
+            fi
+        fi
         ;;
     raspi-ollama)
         OLLAMA_URL="http://192.168.1.31:11434"
@@ -54,15 +72,13 @@ case "$TARGET" in
         ;;
     raspi)
         echo "[*] Forwarding execution to Raspberry Pi (ssh raspi)..."
-        ssh raspi "cd /data/Work/PortfolioPi && git pull origin main >/dev/null 2>&1 && python3 scripts/run_ai_analyst.sh $COMMAND local"
+        ssh raspi "cd /data/Work/PortfolioPi && git pull origin main >/dev/null 2>&1 && bash scripts/run_ai_analyst.sh $COMMAND local"
         exit 0
         ;;
     *)
-        usage
+        usage 1
         ;;
 esac
-
-shift 2 2>/dev/null || true
 
 case "$COMMAND" in
     state)
@@ -80,7 +96,10 @@ case "$COMMAND" in
     scan)
         python3 "$SCRIPT_DIR/scan_screener.py" --ollama-url "$OLLAMA_URL" "$@"
         ;;
+    rebalance)
+        python3 "$SCRIPT_DIR/daily_portfolio_rebalancer.py" --db "$DB_PATH" "$@"
+        ;;
     *)
-        usage
+        usage 1
         ;;
 esac
