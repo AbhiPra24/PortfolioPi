@@ -15,6 +15,26 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 
+try:
+    from scripts.ollama_common import (
+        query_llm_with_fallback,
+        resolve_fallback_endpoint,
+        resolve_fallback_model,
+        resolve_ollama_endpoint,
+        resolve_ollama_model,
+        stream_ollama,
+    )
+except ImportError:
+    from ollama_common import (
+        query_llm_with_fallback,
+        resolve_fallback_endpoint,
+        resolve_fallback_model,
+        resolve_ollama_endpoint,
+        resolve_ollama_model,
+        stream_ollama,
+    )
+
+
 
 def get_default_db_path() -> str:
     candidates = [
@@ -211,10 +231,13 @@ def query_ollama(prompt: str, ollama_url: str = "http://localhost:11434", model:
 def main():
     parser = argparse.ArgumentParser(description="Analyze current PortfolioPi state via Ollama")
     parser.add_argument("--db", default=get_default_db_path(), help="Path to SQLite database")
-    parser.add_argument("--ollama-url", default=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"), help="Ollama base URL")
-    parser.add_argument("--model", default=os.getenv("OLLAMA_MODEL", "qwen2.5:7b"), help="Ollama model name")
+    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Primary Ollama base URL")
+    parser.add_argument("--model", default=resolve_ollama_model(), help="Primary Ollama model name")
+    parser.add_argument("--fallback-url", default=resolve_fallback_endpoint(), help="Fallback Ollama base URL")
+    parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     parser.add_argument("--dry-run", action="store_true", help="Dump extracted metrics JSON without calling Ollama")
     args = parser.parse_args()
+
 
     print(f"[*] Reading portfolio state from: {args.db}")
     state = fetch_portfolio_state(args.db)
@@ -254,9 +277,16 @@ Provide an executive, actionable analysis with the following structured sections
    - Bulleted list of prioritized, defensive or offensive portfolio actions (Take Profits, Stop Losses, SIP Pause/Boost).
 """
 
-    print(f"[*] Prompting Ollama ({args.model} @ {args.ollama_url})...\n" + "=" * 60 + "\n")
-    query_ollama(prompt, ollama_url=args.ollama_url, model=args.model)
+    print(f"[*] Prompting Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n" + "=" * 60 + "\n")
+    stream_ollama(
+        prompt,
+        base_url=args.ollama_url,
+        model=args.model,
+        fallback_url=args.fallback_url,
+        fallback_model=args.fallback_model
+    )
     print("\n" + "=" * 60)
+
 
 
 if __name__ == "__main__":

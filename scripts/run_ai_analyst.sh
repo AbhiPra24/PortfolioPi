@@ -57,19 +57,21 @@ fi
 
 case "$TARGET" in
     local)
-        OLLAMA_URL="${OLLAMA_BASE_URL:-http://localhost:11434}"
+        OLLAMA_URL="${OLLAMA_BASE_URL:-http://192.168.1.39:11434}"
+        FALLBACK_URL="${OLLAMA_FALLBACK_URL:-http://127.0.0.1:11434}"
         DB_PATH="${SQLITE_DB_PATH:-data/portfoliopi.db}"
-        if ! curl -s --max-time 1 "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
-            if command -v agy >/dev/null 2>&1; then
-                export AGY_FALLBACK=1
-                echo "[*] Local Ollama ($OLLAMA_URL) unavailable; falling back to agy."
-            fi
-        fi
         ;;
     raspi-ollama)
-        OLLAMA_URL="http://192.168.1.31:11434"
+        OLLAMA_URL="http://127.0.0.1:11434"
+        FALLBACK_URL="http://127.0.0.1:11434"
         DB_PATH="${SQLITE_DB_PATH:-data/portfoliopi.db}"
         ;;
+    mac-ollama)
+        OLLAMA_URL="http://192.168.1.39:11434"
+        FALLBACK_URL="http://127.0.0.1:11434"
+        DB_PATH="${SQLITE_DB_PATH:-data/portfoliopi.db}"
+        ;;
+
     raspi)
         echo "[*] Forwarding execution to Raspberry Pi (ssh raspi)..."
         ssh raspi "cd /data/Work/PortfolioPi && git pull origin main >/dev/null 2>&1 && bash scripts/run_ai_analyst.sh $COMMAND local"
@@ -82,24 +84,25 @@ esac
 
 case "$COMMAND" in
     state)
-        python3 "$SCRIPT_DIR/analyse_state.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" "$@"
+        python3 "$SCRIPT_DIR/analyse_state.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" --fallback-url "$FALLBACK_URL" "$@"
         ;;
     signals)
-        python3 "$SCRIPT_DIR/analyse_signals.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" "$@"
+        python3 "$SCRIPT_DIR/analyse_signals.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" --fallback-url "$FALLBACK_URL" "$@"
         ;;
     cashflow)
-        python3 "$SCRIPT_DIR/analyse_cashflow.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" "$@"
+        python3 "$SCRIPT_DIR/analyse_cashflow.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" --fallback-url "$FALLBACK_URL" "$@"
         ;;
     ask)
-        python3 "$SCRIPT_DIR/ask_portfolio.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" "$@"
+        python3 "$SCRIPT_DIR/ask_portfolio.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" --fallback-url "$FALLBACK_URL" "$@"
         ;;
     scan)
-        python3 "$SCRIPT_DIR/scan_screener.py" --ollama-url "$OLLAMA_URL" "$@"
+        python3 "$SCRIPT_DIR/scan_screener.py" --ollama-url "$OLLAMA_URL" --fallback-url "$FALLBACK_URL" "$@"
         ;;
     rebalance)
-        python3 "$SCRIPT_DIR/daily_portfolio_rebalancer.py" --db "$DB_PATH" "$@"
+        python3 "$SCRIPT_DIR/daily_portfolio_rebalancer.py" --db "$DB_PATH" --ollama-url "$OLLAMA_URL" --fallback-url "$FALLBACK_URL" "$@"
         ;;
     *)
         usage 1
         ;;
 esac
+

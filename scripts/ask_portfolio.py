@@ -18,10 +18,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ollama_common import (
     get_db_connection,
     resolve_db_path,
+    resolve_fallback_endpoint,
+    resolve_fallback_model,
     resolve_ollama_endpoint,
     resolve_ollama_model,
     stream_ollama
 )
+
 
 
 def get_live_portfolio_context(db_path: str) -> dict:
@@ -91,10 +94,13 @@ def get_live_portfolio_context(db_path: str) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Interactive Ollama Assistant for PortfolioPi")
     parser.add_argument("--db", default=resolve_db_path(), help="Path to SQLite database")
-    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Ollama base URL")
-    parser.add_argument("--model", default=resolve_ollama_model(), help="Ollama model name")
+    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Primary Ollama base URL")
+    parser.add_argument("--model", default=resolve_ollama_model(), help="Primary Ollama model name")
+    parser.add_argument("--fallback-url", default=resolve_fallback_endpoint(), help="Fallback Ollama base URL")
+    parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     parser.add_argument("--query", "-q", help="Single query mode instead of interactive loop")
     args = parser.parse_args()
+
 
     ctx = get_live_portfolio_context(args.db)
 
@@ -117,8 +123,15 @@ QUESTION:
 Direct concise answer:"""
 
         print("\n[AI Analyst]:")
-        stream_ollama(prompt, base_url=args.ollama_url, model=args.model)
+        stream_ollama(
+            prompt,
+            base_url=args.ollama_url,
+            model=args.model,
+            fallback_url=args.fallback_url,
+            fallback_model=args.fallback_model
+        )
         print()
+
 
     if args.query:
         process_query(args.query)

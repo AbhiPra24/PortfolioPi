@@ -29,6 +29,8 @@ try:
         get_db_connection,
         query_llm_with_fallback,
         resolve_db_path,
+        resolve_fallback_endpoint,
+        resolve_fallback_model,
         resolve_ollama_endpoint,
         resolve_ollama_model,
         stream_ollama,
@@ -38,10 +40,13 @@ except ImportError:
         get_db_connection,
         query_llm_with_fallback,
         resolve_db_path,
+        resolve_fallback_endpoint,
+        resolve_fallback_model,
         resolve_ollama_endpoint,
         resolve_ollama_model,
         stream_ollama,
     )
+
 
 
 def load_env_file(env_path: str = ".env") -> Dict[str, str]:
@@ -614,9 +619,12 @@ def main():
     parser.add_argument("--ai", dest="ai", action="store_true", default=True, help="Run AI quantitative analysis (default True)")
     parser.add_argument("--no-ai", dest="ai", action="store_false", help="Skip AI analysis")
     parser.add_argument("--telegram", action="store_true", help="Broadcast generated memo to Telegram owners via urllib")
-    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Ollama base URL")
-    parser.add_argument("--model", default=resolve_ollama_model(), help="Ollama model name")
+    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Primary Ollama base URL")
+    parser.add_argument("--model", default=resolve_ollama_model(), help="Primary Ollama model name")
+    parser.add_argument("--fallback-url", default=resolve_fallback_endpoint(), help="Fallback Ollama base URL")
+    parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     args = parser.parse_args()
+
 
     db_path = resolve_db_path(args.db)
     rebalancer_data = extract_portfolio_rebalancer_data(db_path)
@@ -658,15 +666,18 @@ def main():
         )
         prompt = build_quantitative_memo_prompt(rebalancer_data)
 
-        print(f"[*] Querying LLM memo generator ({args.model} @ {args.ollama_url})...\n")
+        print(f"[*] Querying LLM memo generator (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n")
         generated_memo = query_llm_with_fallback(
             prompt=prompt,
             system_prompt=system_prompt,
             base_url=args.ollama_url,
             model=args.model,
+            fallback_url=args.fallback_url,
+            fallback_model=args.fallback_model,
             temperature=0.2,
             timeout=15.0
         )
+
         print("\n" + "=" * 80)
 
     # 4. Telegram Notification Broadcaster

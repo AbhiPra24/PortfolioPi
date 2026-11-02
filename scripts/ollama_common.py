@@ -1,7 +1,10 @@
 """
 Shared Ollama & SQLite helper utilities for PortfolioPi AI analysis scripts.
 Pure standard-library implementation (zero external dependencies).
-Supports local Ollama, remote RasPi Ollama (:11434), and automatic fallback to Antigravity CLI (`agy`).
+Supports multi-tiered LLM routing:
+  1. Primary: Mac Mini GPU (http://192.168.1.39:11434, qwen2.5:7b)
+  2. Fallback: Local Pi Ollama (http://127.0.0.1:11434 or host.docker.internal:11434, pralabs:edge with [TASK: PORTFOLIO_AUDITOR])
+  3. Offline CLI Fallback: Antigravity CLI (`agy`)
 """
 
 import json
@@ -12,7 +15,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def resolve_db_path(cli_path: Optional[str] = None) -> str:
@@ -21,7 +24,9 @@ def resolve_db_path(cli_path: Optional[str] = None) -> str:
         cli_path,
         os.getenv("SQLITE_DB_PATH"),
         os.getenv("DB_PATH"),
+        "/data/Work/PortfolioPi/data/portfoliopi.db",
         "/data/Work/portfoliopi/data/portfoliopi.db",
+        "/mnt/usb-storage/Work/PortfolioPi/data/portfoliopi.db",
         "/mnt/usb-storage/Work/portfoliopi/data/portfoliopi.db",
         "data/portfoliopi.db",
         "backups/portfoliopi_local.db",
@@ -33,20 +38,35 @@ def resolve_db_path(cli_path: Optional[str] = None) -> str:
 
 
 def resolve_ollama_endpoint(cli_url: Optional[str] = None) -> str:
-    """Resolve Ollama endpoint: CLI arg -> OLLAMA_BASE_URL -> Default local (:11434)."""
+    """Resolve primary Ollama endpoint: CLI arg -> OLLAMA_BASE_URL -> Default Mac GPU (192.168.1.39:11434)."""
     if cli_url:
         return cli_url.rstrip("/")
     if os.getenv("OLLAMA_BASE_URL"):
         return os.getenv("OLLAMA_BASE_URL").rstrip("/")
-    # Default local
-    return "http://localhost:11434"
+    return "http://192.168.1.39:11434"
 
 
 def resolve_ollama_model(cli_model: Optional[str] = None) -> str:
-    """Resolve Ollama model: CLI arg -> OLLAMA_MODEL -> default qwen2.5:7b."""
+    """Resolve primary Ollama model: CLI arg -> OLLAMA_MODEL -> default qwen2.5:7b."""
     if cli_model:
         return cli_model
     return os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+
+
+def resolve_fallback_endpoint(cli_fallback_url: Optional[str] = None) -> str:
+    """Resolve fallback Ollama endpoint: CLI arg -> OLLAMA_FALLBACK_URL -> default local 127.0.0.1:11434."""
+    if cli_fallback_url:
+        return cli_fallback_url.rstrip("/")
+    if os.getenv("OLLAMA_FALLBACK_URL"):
+        return os.getenv("OLLAMA_FALLBACK_URL").rstrip("/")
+    return "http://127.0.0.1:11434"
+
+
+def resolve_fallback_model(cli_fallback_model: Optional[str] = None) -> str:
+    """Resolve fallback Ollama model: CLI arg -> OLLAMA_FALLBACK_MODEL -> default pralabs:edge."""
+    if cli_fallback_model:
+        return cli_fallback_model
+    return os.getenv("OLLAMA_FALLBACK_MODEL", "pralabs:edge")
 
 
 def get_db_connection(db_path: str) -> sqlite3.Connection:
@@ -102,19 +122,20 @@ def execute_agy(prompt: str, system_prompt: Optional[str] = None) -> str:
     return "".join(full_response)
 
 
-def query_llm_with_fallback(
+def _call_ollama_stream(
+    endpoint_url: str,
+    model: str,
     prompt: str,
     system_prompt: Optional[str] = None,
-    base_url: str = "http://localhost:11434",
-    model: str = "qwen2.5:7b",
     temperature: float = 0.2,
     timeout: float = 12.0,
-) -> str:
+) -> Tuple[bool, str]:
     """
-    Query Ollama with streaming output and automatic fallback to Antigravity CLI (`agy`).
+    Internal helper to stream from an Ollama endpoint.
+    Returns (success: bool, response_text: str).
     """
-    endpoint = f"{base_url.rstrip('/')}/api/generate"
-    payload = {
+    endpoint = f"{endpoint_url.rstrip('/')}/api/generate"
+    payload: Dict[str, Any] = {
         "model": model,
         "prompt": prompt,
         "stream": True,
@@ -133,8 +154,6 @@ def query_llm_with_fallback(
     )
 
     full_response = []
-    ollama_failed = False
-
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             for line in resp:
@@ -145,38 +164,100 @@ def query_llm_with_fallback(
                     sys.stdout.flush()
                     full_response.append(text)
             print()
-            return "".join(full_response)
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        ollama_failed = True
-        sys.stderr.write(f"\n[Warning] Ollama unreachable or timed out. Falling back to Antigravity CLI (`agy`)...\n")
+            return True, "".join(full_response)
     except Exception as e:
-        ollama_failed = True
-        sys.stderr.write(f"\n[Warning] Ollama call failed ({e}). Falling back to Antigravity CLI (`agy`)...\n")
+        return False, str(e)
 
-    if ollama_failed:
-        agy_res = execute_agy(prompt=prompt, system_prompt=system_prompt)
-        if agy_res:
-            return agy_res
-        sys.stderr.write("[Error] Neither Ollama nor Antigravity CLI (`agy`) could generate a response.\n")
-        return ""
 
-    return "".join(full_response)
+def query_llm_with_fallback(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+    fallback_url: Optional[str] = None,
+    fallback_model: Optional[str] = None,
+    temperature: float = 0.2,
+    timeout: float = 8.0,
+    fallback_timeout: float = 45.0,
+) -> str:
+    """
+    Tiered LLM Query Engine:
+      1. Primary: Mac Mini GPU (default 192.168.1.39:11434, qwen2.5:7b)
+      2. Fallback: Local Pi Ollama (default 127.0.0.1:11434, pralabs:edge with [TASK: PORTFOLIO_AUDITOR])
+      3. Guaranteed Offline: Antigravity CLI (`agy`)
+    """
+    primary_url = resolve_ollama_endpoint(base_url)
+    primary_model = resolve_ollama_model(model)
+    local_url = resolve_fallback_endpoint(fallback_url)
+    local_model = resolve_fallback_model(fallback_model)
+
+    # 1. Try Primary (Mac Mini GPU)
+    success, result = _call_ollama_stream(
+        endpoint_url=primary_url,
+        model=primary_model,
+        prompt=prompt,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        timeout=timeout,
+    )
+    if success:
+        return result
+
+    sys.stderr.write(
+        f"\n[Tier 1 Warning] Primary Ollama ({primary_model} @ {primary_url}) unreachable or failed: {result}.\n"
+        f"[*] Tier 2 Failover: Routing to local edge model ({local_model} @ {local_url})...\n"
+    )
+
+    # 2. Try Fallback (Local Pi Ollama: pralabs:edge with [TASK: PORTFOLIO_AUDITOR] token)
+    fallback_prompt = prompt
+    if "[TASK: PORTFOLIO_AUDITOR]" not in fallback_prompt:
+        fallback_prompt = f"[TASK: PORTFOLIO_AUDITOR]\n{fallback_prompt}"
+
+    fb_success, fb_result = _call_ollama_stream(
+        endpoint_url=local_url,
+        model=local_model,
+        prompt=fallback_prompt,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        timeout=fallback_timeout,
+    )
+    if fb_success:
+        return fb_result
+
+    sys.stderr.write(
+        f"\n[Tier 2 Warning] Fallback Ollama ({local_model} @ {local_url}) unreachable or failed: {fb_result}.\n"
+        f"[*] Tier 3 Failover: Routing to Antigravity CLI (`agy`)...\n"
+    )
+
+    # 3. Try Antigravity CLI
+    agy_res = execute_agy(prompt=fallback_prompt, system_prompt=system_prompt)
+    if agy_res:
+        return agy_res
+
+    sys.stderr.write("[Error] All LLM tiers failed (Mac GPU, Local Ollama, and Antigravity CLI).\n")
+    return ""
 
 
 def stream_ollama(
     prompt: str,
     system_prompt: Optional[str] = None,
-    base_url: str = "http://localhost:11434",
-    model: str = "qwen2.5:7b",
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+    fallback_url: Optional[str] = None,
+    fallback_model: Optional[str] = None,
     temperature: float = 0.2,
-    timeout: float = 12.0,
+    timeout: float = 8.0,
+    fallback_timeout: float = 45.0,
 ) -> str:
-    """Stream response from Ollama API directly to stdout with automatic fallback to Antigravity CLI (`agy`)."""
+    """Stream response from tiered LLM pipeline directly to stdout."""
     return query_llm_with_fallback(
         prompt=prompt,
         system_prompt=system_prompt,
         base_url=base_url,
         model=model,
+        fallback_url=fallback_url,
+        fallback_model=fallback_model,
         temperature=temperature,
         timeout=timeout,
+        fallback_timeout=fallback_timeout,
     )

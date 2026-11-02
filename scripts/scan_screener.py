@@ -22,10 +22,13 @@ from typing import Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ollama_common import (
+    resolve_fallback_endpoint,
+    resolve_fallback_model,
     resolve_ollama_endpoint,
     resolve_ollama_model,
     stream_ollama
 )
+
 
 SCREENER_PRESETS = {
     "golden-crossover": {
@@ -152,10 +155,13 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Max stocks to fetch per screen")
     parser.add_argument("--live", action="store_true", help="Fetch live Yahoo Finance quotes for each stock")
     parser.add_argument("--ai", action="store_true", help="Pass candidates to Ollama for technical stage evaluation")
-    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Ollama base URL")
-    parser.add_argument("--model", default=resolve_ollama_model(), help="Ollama model name")
+    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Primary Ollama base URL")
+    parser.add_argument("--model", default=resolve_ollama_model(), help="Primary Ollama model name")
+    parser.add_argument("--fallback-url", default=resolve_fallback_endpoint(), help="Fallback Ollama base URL")
+    parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     parser.add_argument("--json", action="store_true", dest="as_json", help="Output raw JSON")
     args = parser.parse_args()
+
 
     active_screens = list(SCREENER_PRESETS.keys()) if args.screen == "all" else [args.screen]
 
@@ -196,7 +202,7 @@ def main():
         return
 
     if args.ai:
-        print(f"\n[*] Synthesizing findings with Ollama ({args.model})...\n" + "=" * 65 + "\n")
+        print(f"\n[*] Synthesizing findings with Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n" + "=" * 65 + "\n")
         prompt = f"""
 You are an institutional equity strategist and Stage Analysis expert.
 Analyze the following newly screened Indian stock market candidates extracted from Screener.in:
@@ -214,7 +220,14 @@ Provide a high-conviction screening memo:
 3. **Suggested Watchlist Additions for PortfolioPi**:
    - Exactly which 2-3 tickers should be added to our local tracking database for 150-day moving average monitoring.
 """
-        stream_ollama(prompt, base_url=args.ollama_url, model=args.model)
+        stream_ollama(
+            prompt,
+            base_url=args.ollama_url,
+            model=args.model,
+            fallback_url=args.fallback_url,
+            fallback_model=args.fallback_model
+        )
+
         print("\n" + "=" * 65)
 
 

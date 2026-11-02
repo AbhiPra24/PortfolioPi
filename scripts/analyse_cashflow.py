@@ -13,10 +13,13 @@ import sys
 from ollama_common import (
     get_db_connection,
     resolve_db_path,
+    resolve_fallback_endpoint,
+    resolve_fallback_model,
     resolve_ollama_endpoint,
     resolve_ollama_model,
     stream_ollama
 )
+
 
 
 def extract_cashflow_data(db_path: str) -> dict:
@@ -118,10 +121,13 @@ def extract_cashflow_data(db_path: str) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Audit dividend cashflow and SIP pacing with Ollama")
     parser.add_argument("--db", default=resolve_db_path(), help="Path to SQLite database")
-    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Ollama base URL")
-    parser.add_argument("--model", default=resolve_ollama_model(), help="Ollama model name")
+    parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Primary Ollama base URL")
+    parser.add_argument("--model", default=resolve_ollama_model(), help="Primary Ollama model name")
+    parser.add_argument("--fallback-url", default=resolve_fallback_endpoint(), help="Fallback Ollama base URL")
+    parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     parser.add_argument("--dry-run", action="store_true", help="Print extracted metrics and exit")
     args = parser.parse_args()
+
 
     data = extract_cashflow_data(args.db)
 
@@ -160,8 +166,16 @@ Generate a structured strategic review covering:
    - Immediate SIP redirects, pauses, or redeployments into higher-quality Stage 1/2 dividend compounders.
 """
 
-    print(f"[*] Analyzing cashflow & dividend schedule via Ollama ({args.model} @ {args.ollama_url})...\n" + "=" * 60 + "\n")
-    stream_ollama(prompt, system_prompt=system_prompt, base_url=args.ollama_url, model=args.model)
+    print(f"[*] Analyzing cashflow & dividend schedule via Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n" + "=" * 60 + "\n")
+    stream_ollama(
+        prompt,
+        system_prompt=system_prompt,
+        base_url=args.ollama_url,
+        model=args.model,
+        fallback_url=args.fallback_url,
+        fallback_model=args.fallback_model
+    )
+
     print("\n" + "=" * 60)
 
 
