@@ -27,10 +27,13 @@ async def run_screener():
             # WARNING: OHLCV processing logic does not currently handle stock splits or bonus issues.
             # This may cause large sudden price jumps/drops that distort technical indicators.
             df = pd.DataFrame(data, columns=['date', 'close', 'high', 'volume'])
+            df['close'] = pd.to_numeric(df['close'], errors='coerce')
+            df['high'] = pd.to_numeric(df['high'], errors='coerce')
+            df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
 
             close_series = df['close']
             volume_series = df['volume']
-            current_price = close_series.iloc[-1]
+            current_price = float(close_series.iloc[-1])
             current_volume = volume_series.iloc[-1]
 
             if len(df) >= 250:

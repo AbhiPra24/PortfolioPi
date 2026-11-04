@@ -25,9 +25,9 @@ def calculate_sma(series: pd.Series, period: int) -> float:
     return sma.iloc[-1] if not sma.empty and not pd.isna(sma.iloc[-1]) else 0.0
 
 def proximity_to_52w_high(current_price: float, high_52w: float) -> float:
-    if high_52w is None or pd.isna(high_52w) or high_52w == 0:
+    if high_52w is None or pd.isna(high_52w) or high_52w == 0 or current_price is None or pd.isna(current_price):
         return None
-    return ((high_52w - current_price) / high_52w) * 100.0
+    return float(((float(high_52w) - float(current_price)) / float(high_52w)) * 100.0)
 
 def volume_spike(current_volume: int, volume_series: pd.Series, period=20) -> float:
     avg_vol = volume_series.rolling(window=period).mean()

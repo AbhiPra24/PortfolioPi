@@ -339,6 +339,8 @@ async def run_market_data_refresh(app=None, send_digest=False):
             ) as cur:
                 nifty_rows = await cur.fetchall()
             nifty_df = pd.DataFrame(list(reversed(nifty_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                nifty_df[col] = pd.to_numeric(nifty_df[col], errors='coerce')
 
             action_inserts = []
             stage_inserts = []
@@ -350,6 +352,8 @@ async def run_market_data_refresh(app=None, send_digest=False):
                     stock_rows = await cur.fetchall()
                 if stock_rows:
                     stock_df = pd.DataFrame(list(reversed(stock_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
+                    for col in ['open', 'high', 'low', 'close', 'volume']:
+                        stock_df[col] = pd.to_numeric(stock_df[col], errors='coerce')
                     res = get_stock_action(ticker, stock_df, nifty_df, ticker in holdings)
                     action_inserts.append((ticker, res['action'], res['rationale']))
 
