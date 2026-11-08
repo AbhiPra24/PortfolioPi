@@ -322,7 +322,7 @@ async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 @owner_only
 async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /analyse <TICKER>", parse_mode='HTML')
+        await update.message.reply_text("Usage: /analyse &lt;TICKER&gt;", parse_mode='HTML')
         return
     ticker = context.args[0].upper()
 

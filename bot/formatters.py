@@ -113,7 +113,7 @@ def format_cashflow_message(dividend_rows: list, total_holdings_count: int = 0) 
     if not dividend_rows:
         return "No dividend schedule data available."
 
-    total_annual = sum(r.get('est_annual_cashflow', 0) for r in dividend_rows)
+    total_annual = sum(float(r.get('est_annual_cashflow') or 0) for r in dividend_rows)
     monthly_runrate = total_annual / 12.0
 
     msg = "💰 <b>Portfolio Dividend & Cashflow Engine</b>\n\n"
@@ -121,11 +121,11 @@ def format_cashflow_message(dividend_rows: list, total_holdings_count: int = 0) 
     msg += f"<b>Monthly Baseline Run-rate:</b> ~₹{monthly_runrate:,.0f} / month\n\n"
 
     msg += "<b>Top Yield-on-Cost (YoC) Generators:</b>\n"
-    sorted_yoc = sorted(dividend_rows, key=lambda x: x.get('yield_on_cost', 0), reverse=True)
+    sorted_yoc = sorted(dividend_rows, key=lambda x: float(x.get('yield_on_cost') or 0), reverse=True)
     for r in sorted_yoc[:8]:
         ticker = r.get('ticker')
-        yoc = r.get('yield_on_cost', 0)
-        est = r.get('est_annual_cashflow', 0)
+        yoc = float(r.get('yield_on_cost') or 0)
+        est = float(r.get('est_annual_cashflow') or 0)
         freq = r.get('payout_frequency', 'PERIODIC')
         msg += f"  • <code>{ticker}</code>: YoC <b>{yoc:.2f}%</b> (₹{est:,.0f}/yr, {freq})\n"
 
