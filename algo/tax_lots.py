@@ -17,7 +17,10 @@ from typing import Any, Dict, List, Optional
 from algo.tax_pairing import (
     HarvestPairingItem,
     HarvestPairingResult,
+    Section112AHarvestItem,
+    Section112AHarvestResult,
     pair_tax_loss_harvest,
+    plan_section_112a_harvest_reset,
 )
 LTCG_RATE = 0.125   # 12.5% LTCG on equity
 STCG_RATE = 0.20    # 20.0% STCG on equity

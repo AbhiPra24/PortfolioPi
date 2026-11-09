@@ -1,14 +1,12 @@
-"""Unit tests for Telegram Magic-Link authentication handler and Breeze session login."""
+"""Unit tests for Telegram session token extraction, validation, and Breeze sync."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-import urllib.parse
 import pytest
 
 from app_config import settings
 from bot.handlers import (
     extract_session_token,
-    login_command,
     session_message_handler,
     handle_session_token_submission,
 )
@@ -88,48 +86,7 @@ def test_extract_session_token_invalid():
 
 
 # ============================================================================
-# 2. Login URL Generation and Command Tests
-# ============================================================================
-
-@pytest.mark.anyio
-async def test_login_command_url_generation(monkeypatch):
-    owner_id = settings.owner_ids_list[0] if settings.owner_ids_list else 12345
-    monkeypatch.setattr(settings, "telegram_owner_ids", str(owner_id))
-
-    update = DummyUpdate(text="/login", user_id=owner_id)
-    context = DummyContext()
-
-    await login_command(update, context)
-
-    assert len(update.message.replies) == 1
-    reply = update.message.replies[0]
-    reply_text = reply["text"]
-
-    expected_api_key = urllib.parse.quote_plus(settings.api_key.get_secret_value())
-    expected_url = f"https://api.icicidirect.com/apiuser/login?api_key={expected_api_key}"
-
-    assert expected_url in reply_text
-    assert "ICICI Breeze API Authentication" in reply_text
-    assert reply["kwargs"].get("parse_mode") == "HTML"
-    assert reply["kwargs"].get("disable_web_page_preview") is True
-
-
-@pytest.mark.anyio
-async def test_login_command_unauthorized(monkeypatch):
-    monkeypatch.setattr(settings, "telegram_owner_ids", "999999")
-    unauthorized_user_id = 111111
-
-    update = DummyUpdate(text="/login", user_id=unauthorized_user_id)
-    context = DummyContext()
-
-    await login_command(update, context)
-
-    assert len(update.message.replies) == 1
-    assert "Unauthorized access." in update.message.replies[0]["text"]
-
-
-# ============================================================================
-# 3. Session Token Submission & Validation Tests
+# 2. Session Token Submission & Validation Tests
 # ============================================================================
 
 @pytest.mark.anyio

@@ -5,7 +5,6 @@ import html
 import logging
 import re
 import sqlite3
-import urllib.parse
 
 import aiosqlite
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -89,23 +88,6 @@ def extract_session_token(text: str) -> str | None:
     if RAW_TOKEN_REGEX.fullmatch(cleaned):
         return cleaned
     return None
-
-
-@owner_only
-async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate ICICI Breeze API login URL and send instructions to the owner."""
-    api_key = settings.api_key.get_secret_value()
-    encoded_key = urllib.parse.quote_plus(api_key)
-    login_url = f"https://api.icicidirect.com/apiuser/login?api_key={encoded_key}"
-
-    msg = (
-        "🔐 <b>ICICI Breeze API Authentication</b>\n\n"
-        "Click the link below on your phone or desktop, complete your ICICI Direct 2FA login, "
-        "and copy the redirect URL (or token) back into this chat:\n\n"
-        f'🔗 <a href="{login_url}"><b>Click Here to Log In to Breeze</b></a>\n\n'
-        "<i>Once logged in, paste the entire redirect URL or the <code>apisession</code> token directly here.</i>"
-    )
-    await update.message.reply_text(msg, parse_mode='HTML', disable_web_page_preview=True)
 
 
 async def handle_session_token_submission(token: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -470,7 +452,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/trades [summary] - View executed trades, drag &amp; performance metrics\n"
         "/orders - View recent order book\n"
         "/status - View system status\n"
-        "/login - Generate Breeze login link\n"
         "/refresh_session &lt;token&gt; - Update Breeze API session\n"
         "/analyse &lt;TICKER&gt; - Get technicals, AI analyst, and action guidance\n"
         "/help - Show this message"
@@ -703,7 +684,6 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏆 SGB Arbitrage", callback_data="sgb"), InlineKeyboardButton("🌊 Cash Sweep", callback_data="cashsweep")],
         [InlineKeyboardButton("📋 SIP Book", callback_data="sips"), InlineKeyboardButton("🧾 Trades", callback_data="trades")],
         [InlineKeyboardButton("📋 Orders", callback_data="orders"), InlineKeyboardButton("⚙️ Status", callback_data="status")],
-        [InlineKeyboardButton("🔐 Login Breeze", callback_data="login")],
     ]
     await update.message.reply_text("Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -725,7 +705,6 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         "trades": trades_command,
         "orders": orders_command,
         "status": status_command,
-        "login": login_command,
     }
     handler = dispatch.get(query.data)
     if handler:

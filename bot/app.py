@@ -13,7 +13,6 @@ from .handlers import (
     cashsweep_command,
     funds_command,
     help_command,
-    login_command,
     menu_callback_handler,
     menu_command,
     orders_command,
@@ -32,7 +31,6 @@ from .handlers import (
 
 COMMANDS = [
     BotCommand("start", "Welcome message"),
-    BotCommand("login", "Generate Breeze API login link"),
     BotCommand("menu", "Show interactive menu"),
     BotCommand("portfolio", "View current holdings"),
     BotCommand("signals", "View today's signals"),
@@ -60,7 +58,6 @@ def create_app() -> Application:
     app = Application.builder().token(settings.telegram_bot_token.get_secret_value()).post_init(_post_init).build()
 
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CallbackQueryHandler(menu_callback_handler))
     app.add_handler(CommandHandler("portfolio", portfolio_command))

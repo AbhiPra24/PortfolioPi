@@ -11,8 +11,9 @@ Under Section 70 and Section 111A of the Indian Income Tax Act:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from algo.order_payloads import BasketOrder, generate_trade_racer_csv, generate_upi_deep_link
 
@@ -258,4 +259,226 @@ def pair_tax_loss_harvest(
         trade_racer_csv=trade_racer_csv,
         upi_deep_link=upi_link,
         settlement_notes=settlement_notes,
+    )
+
+
+@dataclass
+class Section112AHarvestItem:
+    """Represents a lot harvested and cost-basis reset under Section 112A."""
+    stock_code: str
+    lot_id: str
+    shares: int
+    original_cost: float
+    cmp: float
+    unrealized_ltcg: float
+    new_cost_basis: float
+    tax_saved: float
+
+
+@dataclass
+class Section112AHarvestResult:
+    """Structured result of Section 112A tax-gain harvest and cost-basis reset."""
+    total_ltcg_harvested: float = 0.0
+    total_tax_saved: float = 0.0  # @ 12.5%
+    available_exemption_remaining: float = 125000.0
+    harvested_items: List[Section112AHarvestItem] = field(default_factory=list)
+    sell_orders: List[BasketOrder] = field(default_factory=list)
+    buy_orders: List[BasketOrder] = field(default_factory=list)
+    trade_racer_csv: str = ""
+
+    def summary(self) -> str:
+        """Readable summary for Section 112A harvest reset."""
+        lines = [
+            "Section 112A Tax-Gain Harvest Reset Summary:",
+            f"  Total LTCG Harvested: ₹{self.total_ltcg_harvested:,.2f}",
+            f"  Tax Saved (@12.5%): ₹{self.total_tax_saved:,.2f}",
+            f"  Available Exemption Remaining: ₹{self.available_exemption_remaining:,.2f}",
+            f"  Positions Reset: {len(self.harvested_items)}",
+            f"  SELL Orders: {len(self.sell_orders)}",
+            f"  BUY Orders: {len(self.buy_orders)}",
+        ]
+        return "\n".join(lines)
+
+
+def plan_section_112a_harvest_reset(
+    tax_lots: List[Dict[str, Any]],
+    ytd_realized_ltcg: float = 0.0,
+    current_prices: Optional[Dict[str, float]] = None,
+    annual_exemption: float = 125000.0,
+    as_of_date: Optional[date] = None,
+    buffer_pct: float = 0.003,
+) -> Section112AHarvestResult:
+    """Plan Automated Section 112A Tax-Gain Harvest Reset.
+
+    Under Section 112A of the Indian Income Tax Act:
+    - Long-Term Capital Gains (LTCG) on equity up to ₹1,25,000 per financial year is taxed at 0%.
+    - Gains above ₹1,25,000 are taxed at 12.5%.
+    - By executing a paired same-day SELL and BUY of long-term winning lots within the annual
+      exemption limit, an investor resets the acquisition cost basis to the current market price (CMP)
+      with zero net tax liability, permanently locking in tax-free appreciation and reducing future tax drag.
+
+    Args:
+        tax_lots: List of tax lot dicts (e.g. from compute_fifo_tax_lots).
+        ytd_realized_ltcg: Cumulative LTCG already realized in current FY.
+        current_prices: Optional mapping of stock_code -> CMP.
+        annual_exemption: Threshold limit under Sec 112A (default ₹1,25,000).
+        as_of_date: Evaluation date for holding periods.
+        buffer_pct: Limit price execution buffer (default 0.3% / 0.003) for paired SELL/BUY.
+
+    Returns:
+        Section112AHarvestResult with paired SELL/BUY orders and Trade Racer CSV payload.
+    """
+    if current_prices is None:
+        current_prices = {}
+    if as_of_date is None:
+        as_of_date = date.today()
+
+    available_exemption = max(0.0, float(annual_exemption) - float(ytd_realized_ltcg))
+    if available_exemption <= 1e-4:
+        return Section112AHarvestResult(
+            total_ltcg_harvested=0.0,
+            total_tax_saved=0.0,
+            available_exemption_remaining=0.0,
+            harvested_items=[],
+            sell_orders=[],
+            buy_orders=[],
+            trade_racer_csv="",
+        )
+
+    # 1. Filter candidate lots
+    candidates: List[Dict[str, Any]] = []
+    for lot in tax_lots:
+        code = str(lot.get("stock_code") or "").upper().strip()
+        qty = int(lot.get("quantity") or 0)
+        if qty <= 0:
+            continue
+
+        tax_cat = str(lot.get("tax_category") or "").upper().strip()
+        holding_days = lot.get("holding_days")
+        if holding_days is None:
+            # Try computing from buy_date and as_of_date if available
+            buy_d = lot.get("buy_date")
+            if buy_d:
+                from algo.tax_lots import _parse_date
+                parsed_d = _parse_date(buy_d)
+                if parsed_d:
+                    holding_days = (as_of_date - parsed_d).days
+
+        is_ltcg = (tax_cat == "LTCG") or (holding_days is not None and holding_days > 365)
+        if not is_ltcg:
+            continue
+
+        buy_price = float(lot.get("buy_price") or 0.0)
+        cmp_val = float(current_prices.get(code, lot.get("current_price", buy_price)))
+        gain_per_share = cmp_val - buy_price
+
+        # Unrealized gains must be > 0
+        if gain_per_share <= 1e-4:
+            continue
+
+        unrealized_gain = round(gain_per_share * qty, 2)
+        gain_pct = (gain_per_share / buy_price) if buy_price > 0 else 0.0
+
+        candidates.append({
+            "lot": lot,
+            "stock_code": code,
+            "lot_id": str(lot.get("lot_id") or f"{code}_LOT"),
+            "quantity": qty,
+            "buy_price": buy_price,
+            "cmp": cmp_val,
+            "gain_per_share": gain_per_share,
+            "unrealized_gain": unrealized_gain,
+            "gain_pct": gain_pct,
+        })
+
+    # Sort by highest unrealized gain % or highest dollar gain (prefer highest dollar gain, then highest gain %)
+    candidates.sort(key=lambda c: (-c["unrealized_gain"], -c["gain_pct"]))
+
+    remaining_exemption = available_exemption
+    harvested_items: List[Section112AHarvestItem] = []
+    sell_orders: List[BasketOrder] = []
+    buy_orders: List[BasketOrder] = []
+
+    for c in candidates:
+        if remaining_exemption <= 1e-4:
+            break
+
+        gain_per_share = c["gain_per_share"]
+        if gain_per_share <= 1e-4:
+            continue
+
+        # Determine shares to allocate such that harvested gain <= remaining_exemption
+        # shares_alloc = floor(remaining_exemption / gain_per_share)
+        max_shares_for_cap = int(math.floor(remaining_exemption / gain_per_share))
+        shares_to_harvest = min(c["quantity"], max_shares_for_cap)
+
+        if shares_to_harvest <= 0:
+            continue
+
+        lot_gain = round(shares_to_harvest * gain_per_share, 2)
+        remaining_exemption = max(0.0, round(remaining_exemption - lot_gain, 2))
+
+        # Tax saved under Section 112A is 12.5% of the harvested gain (which is tax-free)
+        lot_tax_saved = round(lot_gain * 0.125, 2)
+
+        # New cost basis is the current market price CMP (per share)
+        # and total new cost basis is shares_to_harvest * CMP
+        new_cost_basis_total = round(shares_to_harvest * c["cmp"], 2)
+        orig_cost_total = round(shares_to_harvest * c["buy_price"], 2)
+
+        harvested_items.append(
+            Section112AHarvestItem(
+                stock_code=c["stock_code"],
+                lot_id=c["lot_id"],
+                shares=shares_to_harvest,
+                original_cost=orig_cost_total,
+                cmp=round(c["cmp"], 2),
+                unrealized_ltcg=lot_gain,
+                new_cost_basis=new_cost_basis_total,
+                tax_saved=lot_tax_saved,
+            )
+        )
+
+        sell_price = round(c["cmp"] * (1.0 - buffer_pct), 2)
+        buy_price = round(c["cmp"] * (1.0 + buffer_pct), 2)
+
+        sell_orders.append(
+            BasketOrder(
+                stock_code=c["stock_code"],
+                action="SELL",
+                quantity=shares_to_harvest,
+                price=sell_price,
+                exchange="NSE",
+                order_type="LIMIT",
+                validity="DAY",
+            )
+        )
+        buy_orders.append(
+            BasketOrder(
+                stock_code=c["stock_code"],
+                action="BUY",
+                quantity=shares_to_harvest,
+                price=buy_price,
+                exchange="NSE",
+                order_type="LIMIT",
+                validity="DAY",
+            )
+        )
+
+    total_ltcg_harvested = round(sum(item.unrealized_ltcg for item in harvested_items), 2)
+    total_tax_saved = round(total_ltcg_harvested * 0.125, 2)
+    available_exemption_remaining = round(available_exemption - total_ltcg_harvested, 2)
+
+    # Combined Trade Racer CSV with SELL orders first, followed by BUY orders
+    all_orders = sell_orders + buy_orders
+    trade_racer_csv = generate_trade_racer_csv(all_orders) if all_orders else ""
+
+    return Section112AHarvestResult(
+        total_ltcg_harvested=total_ltcg_harvested,
+        total_tax_saved=total_tax_saved,
+        available_exemption_remaining=available_exemption_remaining,
+        harvested_items=harvested_items,
+        sell_orders=sell_orders,
+        buy_orders=buy_orders,
+        trade_racer_csv=trade_racer_csv,
     )
