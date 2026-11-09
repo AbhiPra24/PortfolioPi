@@ -27,50 +27,37 @@ async def _post_ollama(url: str, model: str, prompt: str, timeout_seconds: float
         logger.info(f"Ollama call to {url} ({model}) failed or timed out: {e}")
         return None
 
-async def _execute_tiered_generation(prompt: str, timeout_primary: float = 12.0, timeout_fallback: float = 45.0) -> str | None:
+async def _execute_generation(prompt: str, timeout_seconds: float = 45.0) -> str | None:
     """
-    Tiered AI Inference:
-      1. Primary: Mac Mini GPU (http://192.168.1.39:11434, qwen2.5:7b)
-      2. Fallback: Local Pi Ollama (http://host.docker.internal:11434 or 127.0.0.1:11434, pralabs:edge with [TASK: PORTFOLIO_AUDITOR])
+    Local Raspberry Pi Ollama inference using local models (pralabs:latest / pralabs:edge).
     """
-    primary_url = getattr(settings, 'ollama_base_url', 'http://192.168.1.39:11434').rstrip('/')
-    primary_model = getattr(settings, 'ollama_model', 'qwen2.5:7b')
-    fallback_url = getattr(settings, 'ollama_fallback_url', 'http://host.docker.internal:11434').rstrip('/')
-    fallback_model = getattr(settings, 'ollama_fallback_model', 'pralabs:edge')
+    url = getattr(settings, 'ollama_base_url', 'http://host.docker.internal:11434').rstrip('/')
+    model = getattr(settings, 'ollama_model', 'pralabs:latest')
 
-    # 1. Attempt Primary
-    res = await _post_ollama(primary_url, primary_model, prompt, timeout_seconds=timeout_primary)
-    if res:
-        return res
-
-    logger.warning(
-        f"[Tier 1 AI Failover] Primary Ollama ({primary_model} @ {primary_url}) failed. "
-        f"Switching to Tier 2 ({fallback_model} @ {fallback_url})..."
-    )
-
-    # 2. Attempt Fallback with [TASK: PORTFOLIO_AUDITOR] token prepended
+    # Prepend task token for fine-tuned edge models if applicable
     fb_prompt = prompt
-    if "[TASK: PORTFOLIO_AUDITOR]" not in fb_prompt:
+    if "[TASK: PORTFOLIO_AUDITOR]" not in fb_prompt and "pralabs" in model:
         fb_prompt = f"[TASK: PORTFOLIO_AUDITOR]\n{fb_prompt}"
 
-    res = await _post_ollama(fallback_url, fallback_model, fb_prompt, timeout_seconds=timeout_fallback)
+    res = await _post_ollama(url, model, fb_prompt, timeout_seconds=timeout_seconds)
     if res:
         return res
 
-    # If fallback_url used host.docker.internal and failed, try 127.0.0.1 directly if running outside docker
-    if "host.docker.internal" in fallback_url:
-        direct_url = fallback_url.replace("host.docker.internal", "127.0.0.1")
-        res = await _post_ollama(direct_url, fallback_model, fb_prompt, timeout_seconds=timeout_fallback)
+    # If running outside container (e.g. host.docker.internal unresolved), try localhost
+    if "host.docker.internal" in url:
+        direct_url = url.replace("host.docker.internal", "127.0.0.1")
+        res = await _post_ollama(direct_url, model, fb_prompt, timeout_seconds=timeout_seconds)
         if res:
             return res
 
-    logger.error("[Tier 2 AI Failure] All Ollama inference endpoints failed.")
+    logger.error(f"[Ollama Inference Failed] Could not generate response from {url} ({model}).")
     return None
 
 async def generate_ai_analysis(ticker: str, metrics: dict, portfolio_ctx: dict | None = None) -> str | None:
     """
-    Produces an institutional-grade technical diagnosis and capital allocation recommendation.
-    Tiers to Mac mini GPU first, falling back to local edge Ollama with [TASK: PORTFOLIO_AUDITOR].
+    Calls local Ollama server running on the Raspberry Pi to produce an institutional-grade
+    technical diagnosis and capital allocation recommendation.
+    Falls back gracefully to None if Ollama is offline or unreachable.
     """
     ctx = portfolio_ctx or {}
     is_holding = ctx.get('is_holding', False)
@@ -102,7 +89,7 @@ Provide a crisp, professional 3-bullet assessment for Telegram:
 • <b>High-Conviction Directive</b>: Exact execution directive (ACCUMULATE on dips, HOLD, TRIM, or CUT LOSS) to maximize compounding.
 Keep formatting clean using Telegram HTML tags (<b>, <i>, <code>). Do not invent numbers not provided above.
 """
-    return await _execute_tiered_generation(prompt, timeout_primary=12.0, timeout_fallback=45.0)
+    return await _execute_generation(prompt, timeout_seconds=45.0)
 
 async def generate_opportunity_rotation_analysis(laggards: list, leaders: list) -> str | None:
     """
@@ -134,4 +121,4 @@ Provide a high-conviction Telegram HTML briefing:
 3. <b>Immediate Execution Steps</b>: Clear directives for the investor today.
 Use concise bullets and HTML tags (<b>, <code>). Do not invent false prices.
 """
-    return await _execute_tiered_generation(prompt, timeout_primary=15.0, timeout_fallback=45.0)
+    return await _execute_generation(prompt, timeout_seconds=45.0)

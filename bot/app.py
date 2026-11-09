@@ -13,6 +13,7 @@ from .handlers import (
     help_command,
     menu_callback_handler,
     menu_command,
+    orders_command,
     portfolio_command,
     price_command,
     refresh_session_command,
@@ -20,6 +21,7 @@ from .handlers import (
     sips_command,
     start_command,
     status_command,
+    trades_command,
     watchlist_command,
 )
 
@@ -34,7 +36,9 @@ COMMANDS = [
     BotCommand("action_plan", "View buy/sell/hold verdicts"),
     BotCommand("watchlist", "Manage watchlist"),
     BotCommand("price", "Get current stock price"),
-    BotCommand("funds", "View available funds"),
+    BotCommand("funds", "View available funds & margins"),
+    BotCommand("trades", "View recent executed trades & brokerage"),
+    BotCommand("orders", "View recent orders"),
     BotCommand("status", "System status & data health"),
     BotCommand("refresh_session", "Update Breeze API session"),
     BotCommand("help", "Show all commands"),
@@ -56,6 +60,8 @@ def create_app() -> Application:
     app.add_handler(CommandHandler("watchlist", watchlist_command))
     app.add_handler(CommandHandler("price", price_command))
     app.add_handler(CommandHandler("funds", funds_command))
+    app.add_handler(CommandHandler("trades", trades_command))
+    app.add_handler(CommandHandler("orders", orders_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("refresh_session", refresh_session_command))
     app.add_handler(CommandHandler("action_plan", action_plan_command))

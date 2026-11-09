@@ -32,7 +32,7 @@ flowchart TD
         TG["Telegram API\napi.telegram.org"]
         BREEZEAPI["ICICI Breeze Connect API\napi.icicidirect.com\n(read-only: no order placement)"]
         YF["Yahoo Finance\nvia yfinance\n(fallback when Breeze session expired)"]
-        OLLAMA["Ollama AI Analyst\n(192.168.1.39:11434 / qwen2.5:7b)"]
+        OLLAMA["Ollama AI Analyst\n(RasPi host:11434 / pralabs:latest)"]
     end
 
     %% User interaction

@@ -44,4 +44,40 @@ class BreezeClient:
     def get_names(self, *args, **kwargs):
         return self.breeze.get_names(*args, **kwargs)
 
-    # DO NOT EXPOSE ANY ORDER PLACEMENT METHODS
+    def get_order_list(self, *args, **kwargs):
+        return self.breeze.get_order_list(*args, **kwargs)
+
+    def get_order_detail(self, *args, **kwargs):
+        return self.breeze.get_order_detail(*args, **kwargs)
+
+    def get_trade_list(self, *args, **kwargs):
+        return self.breeze.get_trade_list(*args, **kwargs)
+
+    def get_trade_detail(self, *args, **kwargs):
+        return self.breeze.get_trade_detail(*args, **kwargs)
+
+    def get_margin(self, *args, **kwargs):
+        return self.breeze.get_margin(*args, **kwargs)
+
+    def get_option_chain_quotes(self, *args, **kwargs):
+        return self.breeze.get_option_chain_quotes(*args, **kwargs)
+
+    def get_stock_script_list(self, *args, **kwargs):
+        return self.breeze.get_stock_script_list(*args, **kwargs)
+
+    def get_stock_token_value(self, *args, **kwargs):
+        return self.breeze.get_stock_token_value(*args, **kwargs)
+
+    def get_data_from_stock_token_value(self, *args, **kwargs):
+        return self.breeze.get_data_from_stock_token_value(*args, **kwargs)
+
+    def gtt_order_book(self, *args, **kwargs):
+        return self.breeze.gtt_order_book(*args, **kwargs)
+
+    def preview_order(self, *args, **kwargs):
+        return self.breeze.preview_order(*args, **kwargs)
+
+    def margin_calculator(self, *args, **kwargs):
+        return self.breeze.margin_calculator(*args, **kwargs)
+
+    # DO NOT EXPOSE ANY ORDER PLACEMENT OR MUTATION METHODS

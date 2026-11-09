@@ -38,19 +38,19 @@ def resolve_db_path(cli_path: Optional[str] = None) -> str:
 
 
 def resolve_ollama_endpoint(cli_url: Optional[str] = None) -> str:
-    """Resolve primary Ollama endpoint: CLI arg -> OLLAMA_BASE_URL -> Default Mac GPU (192.168.1.39:11434)."""
+    """Resolve primary Ollama endpoint: CLI arg -> OLLAMA_BASE_URL -> Default local host (:11434)."""
     if cli_url:
         return cli_url.rstrip("/")
     if os.getenv("OLLAMA_BASE_URL"):
         return os.getenv("OLLAMA_BASE_URL").rstrip("/")
-    return "http://192.168.1.39:11434"
+    return "http://localhost:11434"
 
 
 def resolve_ollama_model(cli_model: Optional[str] = None) -> str:
-    """Resolve primary Ollama model: CLI arg -> OLLAMA_MODEL -> default qwen2.5:7b."""
+    """Resolve Ollama model: CLI arg -> OLLAMA_MODEL -> default pralabs:latest."""
     if cli_model:
         return cli_model
-    return os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+    return os.getenv("OLLAMA_MODEL", "pralabs:latest")
 
 
 def resolve_fallback_endpoint(cli_fallback_url: Optional[str] = None) -> str:

@@ -195,9 +195,47 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trades_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id TEXT,
+                trade_id TEXT UNIQUE,
+                trade_date TEXT,
+                stock_code TEXT,
+                action TEXT,
+                quantity INTEGER,
+                average_cost REAL,
+                ltp REAL,
+                brokerage_amount REAL,
+                total_taxes REAL,
+                product_type TEXT,
+                exchange_code TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS orders_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id TEXT UNIQUE,
+                order_datetime TEXT,
+                stock_code TEXT,
+                action TEXT,
+                order_type TEXT,
+                quantity INTEGER,
+                price REAL,
+                average_price REAL,
+                status TEXT,
+                exchange_code TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Ensure critical unique constraints / indexes exist for upserts
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_holdings_snapshot_stock_code ON holdings_snapshot(stock_code);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_mapping_stock_code ON ticker_mapping(stock_code);")
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_history_trade_id ON trades_history(trade_id);")
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_history_order_id ON orders_history(order_id);")
 
         await db.commit()
 

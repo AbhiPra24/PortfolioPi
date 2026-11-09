@@ -204,17 +204,129 @@ async def funds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     funds = breeze.get_funds()
+    margin = breeze.get_margin(exchange_code="NSE")
+
+    msg = "<b>💰 Account Funds & Margins:</b>\n\n"
     if funds.get("Success"):
         data = funds["Success"]
-        msg = (
-            "<b>Account Funds / Margin:</b>\n"
-            f"Available Margin: ₹{data.get('bank_balance', 'N/A')}\n"
-            f"Allocated Amount: ₹{data.get('allocated_amount', 'N/A')}\n"
-            f"Block Amount: ₹{data.get('block_amount', 'N/A')}"
+        unalloc = float(data.get("unallocated_balance", 0) or 0)
+        alloc_eq = float(data.get("allocated_equity", 0) or 0)
+        alloc_fno = float(data.get("allocated_fno", 0) or 0)
+        msg += (
+            f"<b>Unallocated Cash:</b> ₹{unalloc:,.2f}\n"
+            f"<b>Allocated Equity:</b> ₹{alloc_eq:,.2f}\n"
+            f"<b>Allocated F&O:</b> ₹{alloc_fno:,.2f}\n"
         )
-        await update.message.reply_text(msg, parse_mode='HTML')
     else:
-        await update.message.reply_text(f"Failed to fetch funds: {funds.get('Error', 'Unknown error')}", parse_mode='HTML')
+        msg += f"Funds info unavailable: {funds.get('Error')}\n"
+
+    if margin.get("Success"):
+        mdata = margin["Success"]
+        cash_lim = float(mdata.get("cash_limit", 0) or 0)
+        blk = float(mdata.get("block_by_trade", 0) or 0)
+        msg += f"<b>Cash Limit (NSE):</b> ₹{cash_lim:,.2f}\n"
+        if blk > 0:
+            msg += f"<b>Blocked by Trade:</b> ₹{blk:,.2f}\n"
+
+    await update.message.reply_text(msg, parse_mode='HTML')
+
+
+@owner_only
+async def trades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from scripts.analyse_trade_performance import (
+        calculate_trade_metrics,
+        format_trades_summary_header,
+        get_trades_from_db,
+    )
+
+    args = context.args or []
+    summary_only = bool(args and args[0].lower() in ("summary", "stats", "metrics"))
+
+    trades = []
+    source = "live"
+
+    breeze = await get_breeze_client()
+    if breeze:
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        from_date = (now - timedelta(days=30 if summary_only else 7)).strftime("%Y-%m-%dT06:00:00.000Z")
+        to_date = now.strftime("%Y-%m-%dT06:00:00.000Z")
+        trades_resp = breeze.get_trade_list(from_date=from_date, to_date=to_date, exchange_code="NSE")
+        if trades_resp.get("Success"):
+            trades = trades_resp["Success"]
+
+    if not trades:
+        # Fallback to local database trades_history
+        trades = await get_trades_from_db(settings.db_path, limit=50 if summary_only else 15)
+        source = "db"
+
+    if not trades:
+        await update.message.reply_text(
+            "<b>Recent Trades:</b>\nNo trade executions found in the last 7 days (or local database).",
+            parse_mode='HTML'
+        )
+        return
+
+    metrics = calculate_trade_metrics(trades)
+    header = format_trades_summary_header(metrics)
+
+    if summary_only:
+        msg = f"{header}\n\n<i>(Analyzed {len(trades)} recent executions from {source})</i>"
+        await update.message.reply_text(msg, parse_mode='HTML')
+        return
+
+    msg = f"{header}\n\n<b>Recent Executions:</b>\n"
+    for t in trades[:8]:
+        action_emoji = "🟢" if str(t.get("action", "")).lower() == "buy" else "🔴"
+        cost = float(t.get("average_cost", 0) or 0)
+        ltp = float(t.get("ltp") or t.get("price") or 0)
+        brok = float(t.get("brokerage_amount", 0) or 0)
+        taxes = float(t.get("total_taxes", 0) or 0)
+        t_date = str(t.get("trade_date", ""))
+        if len(t_date) > 16:
+            t_date = t_date[:16].replace("T", " ")
+
+        msg += (
+            f"{action_emoji} <b>{t.get('stock_code')}</b> ({t.get('action')})\n"
+            f"   Qty: {t.get('quantity')} @ ₹{ltp:,.2f} | Turn: ₹{cost:,.2f}\n"
+            f"   Drag: ₹{(brok + taxes):.2f} (Brok: ₹{brok:.1f}, Tax: ₹{taxes:.1f}) | {t_date}\n"
+        )
+
+    if len(trades) > 8:
+        msg += f"\n<i>...and {len(trades) - 8} more trades. Use /trades summary for full stats.</i>"
+
+    await update.message.reply_text(msg, parse_mode='HTML')
+
+
+@owner_only
+async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    breeze = await get_breeze_client()
+    if not breeze:
+        await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode='HTML')
+        return
+
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    from_date = (now - timedelta(days=5)).strftime("%Y-%m-%dT06:00:00.000Z")
+    to_date = now.strftime("%Y-%m-%dT06:00:00.000Z")
+
+    orders_resp = breeze.get_order_list(from_date=from_date, to_date=to_date, exchange_code="NSE")
+    if not orders_resp.get("Success"):
+        err = orders_resp.get("Error") or "No recent orders found."
+        await update.message.reply_text(f"<b>Order Book:</b>\n{err}", parse_mode='HTML')
+        return
+
+    orders = orders_resp["Success"]
+    msg = f"<b>📋 Order Book (Last 5 Days) [{len(orders)}]:</b>\n\n"
+    for o in orders[:10]:
+        st = o.get("status", "Unknown")
+        icon = "✅" if st.lower() == "executed" else ("⏳" if "pending" in st.lower() or "ordered" in st.lower() else "❌")
+        msg += (
+            f"{icon} <b>{o.get('stock_code')}</b> - {o.get('action')} {o.get('order_type')}\n"
+            f"   Qty: {o.get('quantity')} @ ₹{o.get('price')} | Status: <b>{st}</b>\n"
+            f"   Time: {o.get('order_datetime')}\n"
+        )
+    await update.message.reply_text(msg, parse_mode='HTML')
 
 
 @owner_only
@@ -265,7 +377,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cashflow - View dividend & cashflow projections\n"
         "/watchlist list|add|remove &lt;TICKER&gt; - Manage watchlist\n"
         "/price &lt;TICKER&gt; - Get current stock price\n"
-        "/funds - View available funds\n"
+        "/funds - View available funds and margins\n"
+        "/trades [summary] - View executed trades, drag &amp; performance metrics\n"
+        "/orders - View recent order book\n"
         "/status - View system status\n"
         "/refresh_session &lt;token&gt; - Update Breeze API session\n"
         "/analyse &lt;TICKER&gt; - Get technicals, AI analyst, and action guidance\n"
@@ -366,6 +480,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Portfolio", callback_data="portfolio"), InlineKeyboardButton("📈 Signals", callback_data="signals")],
         [InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"), InlineKeyboardButton("💰 Funds", callback_data="funds")],
+        [InlineKeyboardButton("🧾 Trades", callback_data="trades"), InlineKeyboardButton("📋 Orders", callback_data="orders")],
         [InlineKeyboardButton("📋 SIP Book", callback_data="sips"), InlineKeyboardButton("💵 Cashflow", callback_data="cashflow")],
         [InlineKeyboardButton("⚙️ Status", callback_data="status")],
     ]
@@ -381,6 +496,8 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         "signals": signals_command,
         "action_plan": action_plan_command,
         "funds": funds_command,
+        "trades": trades_command,
+        "orders": orders_command,
         "sips": sips_command,
         "cashflow": cashflow_command,
         "status": status_command,

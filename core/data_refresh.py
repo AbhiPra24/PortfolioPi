@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 import dateutil.parser
@@ -35,6 +35,152 @@ def get_historical_with_retry(breeze, stock_code, from_date, to_date):
 def get_names_with_retry(breeze, stock_code):
     exchange = "NSE"
     return breeze.get_names(exchange_code=exchange, stock_code=stock_code)
+
+
+async def sync_breeze_trades_and_orders(breeze: BreezeClient) -> dict:
+    """
+    Fetch last 7 days of trades and last 5 days of orders from Breeze API,
+    and persist/upsert them into trades_history and orders_history.
+    """
+    stats = {"trades_synced": 0, "orders_synced": 0}
+    now = datetime.now(timezone.utc)
+
+    # 1. Fetch trades (last 7 days)
+    trade_from = (now - timedelta(days=7)).strftime("%Y-%m-%dT06:00:00.000Z")
+    trade_to = now.strftime("%Y-%m-%dT06:00:00.000Z")
+    try:
+        trades_resp = await asyncio.to_thread(
+            breeze.get_trade_list,
+            from_date=trade_from,
+            to_date=trade_to,
+            exchange_code="NSE"
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch trades from Breeze: {e}")
+        trades_resp = None
+
+    # 2. Fetch orders (last 5 days)
+    order_from = (now - timedelta(days=5)).strftime("%Y-%m-%dT06:00:00.000Z")
+    order_to = now.strftime("%Y-%m-%dT06:00:00.000Z")
+    try:
+        orders_resp = await asyncio.to_thread(
+            breeze.get_order_list,
+            from_date=order_from,
+            to_date=order_to,
+            exchange_code="NSE"
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch orders from Breeze: {e}")
+        orders_resp = None
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        if isinstance(trades_resp, dict) and trades_resp.get("Success"):
+            trades = trades_resp.get("Success", [])
+            for idx, t in enumerate(trades):
+                trade_id = str(t.get("trade_id") or t.get("order_id") or f"trade_{idx}").strip()
+                if not trade_id:
+                    continue
+                order_id = str(t.get("order_id") or "").strip()
+                trade_date = str(t.get("trade_date") or "").strip()
+                stock_code = str(t.get("stock_code") or "").strip()
+                action = str(t.get("action") or "").strip()
+                try:
+                    quantity = int(t.get("quantity", 0) or 0)
+                except (ValueError, TypeError):
+                    quantity = 0
+                try:
+                    average_cost = float(t.get("average_cost", 0) or 0)
+                except (ValueError, TypeError):
+                    average_cost = 0.0
+                try:
+                    ltp = float(t.get("ltp", 0) or 0)
+                except (ValueError, TypeError):
+                    ltp = 0.0
+                try:
+                    brokerage_amount = float(t.get("brokerage_amount", 0) or 0)
+                except (ValueError, TypeError):
+                    brokerage_amount = 0.0
+                try:
+                    total_taxes = float(t.get("total_taxes", 0) or 0)
+                except (ValueError, TypeError):
+                    total_taxes = 0.0
+                product_type = str(t.get("product_type") or "").strip()
+                exchange_code = str(t.get("exchange_code") or "NSE").strip()
+
+                await db.execute("""
+                    INSERT INTO trades_history (
+                        order_id, trade_id, trade_date, stock_code, action, quantity,
+                        average_cost, ltp, brokerage_amount, total_taxes, product_type, exchange_code
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(trade_id) DO UPDATE SET
+                        order_id=excluded.order_id,
+                        trade_date=excluded.trade_date,
+                        stock_code=excluded.stock_code,
+                        action=excluded.action,
+                        quantity=excluded.quantity,
+                        average_cost=excluded.average_cost,
+                        ltp=excluded.ltp,
+                        brokerage_amount=excluded.brokerage_amount,
+                        total_taxes=excluded.total_taxes,
+                        product_type=excluded.product_type,
+                        exchange_code=excluded.exchange_code
+                """, (
+                    order_id, trade_id, trade_date, stock_code, action, quantity,
+                    average_cost, ltp, brokerage_amount, total_taxes, product_type, exchange_code
+                ))
+                stats["trades_synced"] += 1
+            await db.commit()
+
+        if isinstance(orders_resp, dict) and orders_resp.get("Success"):
+            orders = orders_resp.get("Success", [])
+            for o in orders:
+                order_id = str(o.get("order_id") or "").strip()
+                if not order_id:
+                    continue
+                order_datetime = str(o.get("order_datetime") or "").strip()
+                stock_code = str(o.get("stock_code") or "").strip()
+                action = str(o.get("action") or "").strip()
+                order_type = str(o.get("order_type") or "").strip()
+                try:
+                    quantity = int(o.get("quantity", 0) or 0)
+                except (ValueError, TypeError):
+                    quantity = 0
+                try:
+                    price = float(o.get("price", 0) or 0)
+                except (ValueError, TypeError):
+                    price = 0.0
+                try:
+                    average_price = float(o.get("average_price", 0) or 0)
+                except (ValueError, TypeError):
+                    average_price = 0.0
+                status = str(o.get("status") or "").strip()
+                exchange_code = str(o.get("exchange_code") or "NSE").strip()
+
+                await db.execute("""
+                    INSERT INTO orders_history (
+                        order_id, order_datetime, stock_code, action, order_type,
+                        quantity, price, average_price, status, exchange_code
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(order_id) DO UPDATE SET
+                        order_datetime=excluded.order_datetime,
+                        stock_code=excluded.stock_code,
+                        action=excluded.action,
+                        order_type=excluded.order_type,
+                        quantity=excluded.quantity,
+                        price=excluded.price,
+                        average_price=excluded.average_price,
+                        status=excluded.status,
+                        exchange_code=excluded.exchange_code,
+                        updated_at=CURRENT_TIMESTAMP
+                """, (
+                    order_id, order_datetime, stock_code, action, order_type,
+                    quantity, price, average_price, status, exchange_code
+                ))
+                stats["orders_synced"] += 1
+            await db.commit()
+
+    logger.info(f"Breeze trades & orders sync complete: {stats['trades_synced']} trades, {stats['orders_synced']} orders processed.")
+    return stats
 
 
 async def run_breeze_sync(app=None, silent=True):
@@ -197,6 +343,12 @@ async def run_breeze_sync(app=None, silent=True):
                         await db.commit()
 
                 await asyncio.sleep(1)
+
+            # 4. Synchronize Trades and Orders History
+            try:
+                await sync_breeze_trades_and_orders(breeze)
+            except Exception as e:
+                logger.error(f"Error during trades/orders sync in run_breeze_sync: {e}")
 
             # Record heartbeat
             await db.execute("INSERT INTO job_heartbeats (job_name) VALUES (?)", ("run_breeze_sync",))

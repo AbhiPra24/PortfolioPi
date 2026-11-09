@@ -36,7 +36,7 @@ This layer aggregates individual stock signals and actions to provide portfolio-
 
 ## 10. Ollama AI Quantitative Analyst & Capital Rotation
 
-Integrated via `core/ai_analyst.py`, PortfolioPi connects over LAN to an Ollama server running on the Mac mini (`192.168.1.39:11434`, model `qwen2.5:7b`).
+Integrated via `core/ai_analyst.py`, PortfolioPi connects to the local Ollama server running directly on the Raspberry Pi host (`:11434`, model `pralabs:latest` or `portfoliopi:1.5b-edge`).
 
 ### Key Capabilities:
 1. **Contextual Signal Synthesis**: Takes the deterministic mathematical vector (Weinstein Stage, Minervini score, Relative Strength, Distribution Days, and Chandelier trailing stop) and translates it into an institutional-grade risk diagnosis.
