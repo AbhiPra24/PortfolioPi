@@ -5,6 +5,39 @@ import numpy as np
 import pandas as pd
 
 
+def compute_dynamic_chandelier_multiplier(
+    stage: int = 2,
+    vix: float | None = None,
+    vix_sma50: float | None = None,
+    atr22: float | None = None,
+    atr100: float | None = None,
+    asset_class: str = "EQUITY",
+    alpha: float = 0.35,
+    gamma: float = 0.25,
+) -> float:
+    """Helper to compute dynamic multiplier directly without requiring a DataFrame."""
+    asset_upper = (asset_class or "EQUITY").upper()
+    if asset_upper in ("COMMODITY_ETF", "GOLD", "SILVER", "COMMODITY", "REIT", "INVIT", "REIT_INVIT"):
+        k_base = 3.5
+    elif stage == 2:
+        k_base = 3.2
+    elif stage == 3:
+        k_base = 2.2
+    else:
+        k_base = 2.8
+
+    macro_factor = 1.0
+    if vix is not None and vix_sma50 is not None and vix > 0 and vix_sma50 > 0:
+        macro_factor = (vix_sma50 / vix) ** alpha
+
+    term_factor = 1.0
+    if atr22 is not None and atr100 is not None and atr22 > 0 and atr100 > 0:
+        term_factor = (atr22 / atr100) ** (-gamma)
+
+    k_t = k_base * macro_factor * term_factor
+    return max(2.0, min(4.2, float(k_t)))
+
+
 def calculate_chandelier_exit(
     df: pd.DataFrame,
     period: int = 22,

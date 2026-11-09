@@ -5,6 +5,42 @@ import numpy as np
 import pandas as pd
 
 
+def compute_sip_multiplier(
+    stage: int,
+    z: float,
+    rs: float = 80.0,
+    dist_days: int = 0,
+    beta: float = 0.5,
+    z_star: float = 0.5,
+    sigma: float = 1.5,
+) -> float:
+    """Helper alias for calculate_sip_multiplier directly using z score.
+    
+    Formula:
+        M_i = S_stage * clip(0.5 + 1.5 * exp(-((z - z*)^2)/(2 * sigma^2)) * (RS/80)^beta * V_pen, 0.5, 2.0)
+        For z* = 0.5, sigma = 1.5, 2 * sigma^2 = 4.5.
+    """
+    if stage in (3, 4):
+        return 0.0
+
+    if stage == 1:
+        s_stage = 0.5
+    elif stage == 2:
+        s_stage = 1.0
+    else:
+        s_stage = 0.5
+
+    import math
+    denom = 2.0 * (sigma ** 2)
+    gauss = math.exp(-((z - z_star) ** 2) / denom)
+    rs_term = (max(0.0, float(rs)) / 80.0) ** beta
+    v_pen = 0.6 if dist_days >= 4 else 1.0
+
+    raw = 0.5 + 1.5 * gauss * rs_term * v_pen
+    clipped = max(0.5, min(2.0, raw))
+    return float(s_stage * clipped)
+
+
 def calculate_sip_multiplier(
     df: pd.DataFrame,
     stage: int = 2,
