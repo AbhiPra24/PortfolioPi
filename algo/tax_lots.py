@@ -14,7 +14,11 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-# Indian Capital Gains Tax Constants (Finance Act post-July 2024 / FY 2024-25+)
+from algo.tax_pairing import (
+    HarvestPairingItem,
+    HarvestPairingResult,
+    pair_tax_loss_harvest,
+)
 LTCG_RATE = 0.125   # 12.5% LTCG on equity
 STCG_RATE = 0.20    # 20.0% STCG on equity
 LTCG_ANNUAL_EXEMPTION_LIMIT = 125000.0  # ₹1.25 Lakh annual exemption under Section 112A
@@ -220,6 +224,11 @@ def evaluate_tax_hurdle_rule(
     realized_stcl_available: bool = False,
     remaining_ltcg_exemption: float = LTCG_ANNUAL_EXEMPTION_LIMIT,
     as_of_date: Optional[date] = None,
+    candidate_lots: Optional[List[Dict[str, Any]]] = None,
+    current_prices: Optional[Dict[str, float]] = None,
+    stage_map: Optional[Dict[str, int]] = None,
+    upi_payee_vpa: Optional[str] = None,
+    upi_payee_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Two-Tier Tax Hurdle Rule Matrix implementation.
 
@@ -259,13 +268,35 @@ def evaluate_tax_hurdle_rule(
 
     # Rule 1: Hard stop breach or Stage 4
     if hard_stop_breached or stage == 4 or "SELL" in base_action.upper():
-        loss_pair_note = " Check for loss-harvesting offsets." if unrealized_gain < 0 else ""
-        return {
+        pairing_result = None
+        if tax_cat == "STCG" and unrealized_gain > 0 and candidate_lots:
+            pairing_result = pair_tax_loss_harvest(
+                gain_lot=lot,
+                candidate_lots=candidate_lots,
+                current_prices=current_prices,
+                stage_map=stage_map,
+                upi_payee_vpa=upi_payee_vpa,
+                upi_payee_name=upi_payee_name,
+            )
+
+        loss_pair_note = ""
+        if pairing_result and pairing_result.harvested_losses:
+            loss_pair_note = (
+                f" Paired with {len(pairing_result.harvested_losses)} Stage 4 loss lot(s) "
+                f"saving ₹{pairing_result.net_tax_saved:,.2f} STCG tax."
+            )
+        elif unrealized_gain < 0:
+            loss_pair_note = " Check for loss-harvesting offsets."
+
+        res: Dict[str, Any] = {
             "tax_action": "SELL_100_IMMEDIATELY",
             "decision": "EXIT",
             "rationale": f"Capital preservation overrides tax drag (Stage {stage} / Stop breach).{loss_pair_note}",
             "tax_category": tax_cat,
         }
+        if pairing_result is not None:
+            res["harvest_pairing"] = pairing_result
+        return res
 
     # Check for Discretionary TRIM actions
     is_trim = "TRIM" in base_action.upper() or base_action.upper() == "PAUSE SIP"

@@ -1,7 +1,7 @@
 """Telegram bot initialization and long-polling entry point."""
 
 from telegram import BotCommand
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from app_config import settings
 
@@ -11,12 +11,14 @@ from .handlers import (
     cashflow_command,
     funds_command,
     help_command,
+    login_command,
     menu_callback_handler,
     menu_command,
     orders_command,
     portfolio_command,
     price_command,
     refresh_session_command,
+    session_message_handler,
     signals_command,
     sips_command,
     start_command,
@@ -27,6 +29,7 @@ from .handlers import (
 
 COMMANDS = [
     BotCommand("start", "Welcome message"),
+    BotCommand("login", "Generate Breeze API login link"),
     BotCommand("menu", "Show interactive menu"),
     BotCommand("portfolio", "View current holdings"),
     BotCommand("signals", "View today's signals"),
@@ -51,6 +54,7 @@ def create_app() -> Application:
     app = Application.builder().token(settings.telegram_bot_token.get_secret_value()).post_init(_post_init).build()
 
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CallbackQueryHandler(menu_callback_handler))
     app.add_handler(CommandHandler("portfolio", portfolio_command))
@@ -67,5 +71,6 @@ def create_app() -> Application:
     app.add_handler(CommandHandler("action_plan", action_plan_command))
     app.add_handler(CommandHandler("analyse", analyse_command))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), session_message_handler))
 
     return app

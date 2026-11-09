@@ -3,6 +3,8 @@ import sqlite3
 
 import streamlit as st
 
+from core.database import configure_sqlite3_connection
+
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "portfoliopi.db"))
 
 
@@ -10,11 +12,19 @@ DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", 
 def get_db_connection():
     # URI mode=ro requires uri=True
     uri = f"file:{DB_PATH}?mode=ro"
-    return sqlite3.connect(uri, uri=True, check_same_thread=False)
+    conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+    # Apply read-safe PRAGMAs (busy_timeout, cache_size, temp_store)
+    cur = conn.cursor()
+    cur.execute("PRAGMA busy_timeout=5000;")
+    cur.execute("PRAGMA temp_store=MEMORY;")
+    cur.execute("PRAGMA cache_size=-64000;")
+    cur.close()
+    return conn
 
 
 def get_writable_db_connection():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    return configure_sqlite3_connection(conn)
 
 
 def query_db(query, args=(), one=False):

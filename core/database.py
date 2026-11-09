@@ -1,13 +1,76 @@
 """SQLite database initialization and schema setup."""
 
+from contextlib import asynccontextmanager
 import logging
 import os
+import sqlite3
+from typing import AsyncGenerator, Optional, Union
 
 import aiosqlite
 
 from app_config import settings
 
 logger = logging.getLogger(__name__)
+
+# Standard PRAGMA configuration for high performance and low flash wear on Raspberry Pi
+SQLITE_PRAGMAS = [
+    "PRAGMA journal_mode=WAL;",
+    "PRAGMA synchronous=NORMAL;",
+    "PRAGMA busy_timeout=5000;",
+    "PRAGMA temp_store=MEMORY;",
+    "PRAGMA cache_size=-64000;",  # 64MB cache in RAM
+]
+
+
+async def configure_connection(db: aiosqlite.Connection) -> aiosqlite.Connection:
+    """Apply standard PRAGMAs to an aiosqlite database connection."""
+    for pragma in SQLITE_PRAGMAS:
+        await db.execute(pragma)
+    return db
+
+
+def configure_sqlite3_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
+    """Apply standard PRAGMAs to a synchronous sqlite3 database connection."""
+    cur = conn.cursor()
+    for pragma in SQLITE_PRAGMAS:
+        cur.execute(pragma)
+    cur.close()
+    return conn
+
+
+@asynccontextmanager
+async def get_db_connection(db_path: Optional[str] = None) -> AsyncGenerator[aiosqlite.Connection, None]:
+    """Centralized async connection context manager returning a PRAGMA-configured aiosqlite connection."""
+    target_path = db_path or settings.db_path
+    db_dir = os.path.dirname(target_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    async with aiosqlite.connect(target_path) as db:
+        await configure_connection(db)
+        yield db
+
+
+async def connect_db(db_path: Optional[str] = None) -> aiosqlite.Connection:
+    """Centralized async connection factory returning a raw PRAGMA-configured aiosqlite connection (caller closes)."""
+    target_path = db_path or settings.db_path
+    db_dir = os.path.dirname(target_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    db = await aiosqlite.connect(target_path)
+    await configure_connection(db)
+    return db
+
+
+def get_sync_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
+    """Centralized sync connection factory returning a PRAGMA-configured sqlite3 connection."""
+    target_path = db_path or settings.db_path
+    db_dir = os.path.dirname(target_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    conn = sqlite3.connect(target_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    configure_sqlite3_connection(conn)
+    return conn
 
 
 # No migration framework exists — new fields on an existing entity must be a new table (CREATE TABLE IF NOT EXISTS is a no-op on an already-created table), never an ALTER TABLE or a column addition to an existing CREATE statement.
@@ -17,8 +80,7 @@ async def init_db():
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
-    async with aiosqlite.connect(settings.db_path) as db:
-        await db.execute("PRAGMA journal_mode=WAL;")
+    async with get_db_connection(settings.db_path) as db:
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS holdings_snapshot (
@@ -198,7 +260,36 @@ async def init_db():
                 next_expected_payout TEXT,
                 est_annual_cashflow REAL,
                 yield_on_cost REAL,
+                dividend_amount REAL DEFAULT 0.0,
+                interest_amount REAL DEFAULT 0.0,
+                roc_amount REAL DEFAULT 0.0,
+                ex_date TEXT,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Ensure distribution breakdown columns exist for dividend_schedule
+        for col_def in [
+            "dividend_amount REAL DEFAULT 0.0",
+            "interest_amount REAL DEFAULT 0.0",
+            "roc_amount REAL DEFAULT 0.0",
+            "ex_date TEXT",
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE dividend_schedule ADD COLUMN {col_def};")
+            except Exception:
+                pass
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS roc_amortization_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stock_code TEXT NOT NULL,
+                ex_date TEXT NOT NULL,
+                roc_per_unit REAL NOT NULL,
+                old_cost REAL NOT NULL,
+                new_cost REAL NOT NULL,
+                processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(stock_code, ex_date)
             )
         """)
 

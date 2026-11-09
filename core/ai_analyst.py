@@ -3,8 +3,17 @@ import logging
 from typing import Any, Dict, List, Optional
 import aiohttp
 from app_config import settings
+from core.circuit_breaker import (
+    CircuitState,
+    DualEngineRouter,
+    probe_endpoint_health,
+    parse_host_port_from_url,
+)
 
 logger = logging.getLogger(__name__)
+
+# Global DualEngineRouter singleton instance
+default_router = DualEngineRouter()
 
 async def _post_ollama(
     url: str,
@@ -43,12 +52,22 @@ async def _execute_generation(
     prompt: str,
     timeout_seconds: float = 45.0,
     options: Optional[Dict[str, Any]] = None,
+    router: Optional[DualEngineRouter] = None,
 ) -> str | None:
     """
-    Local Raspberry Pi Ollama inference using local models (pralabs:latest / pralabs:edge).
+    Dual-engine local inference with circuit breaker.
+    If circuit is PRIMARY, dispatches to primary local engine.
+    If circuit is EDGE, dispatches to quantized edge model.
     """
-    url = getattr(settings, 'ollama_base_url', 'http://host.docker.internal:11434').rstrip('/')
-    model = getattr(settings, 'ollama_model', 'pralabs:latest')
+    active_router = router or default_router
+    await active_router.check_and_update_state()
+
+    if active_router.state == CircuitState.PRIMARY:
+        url = active_router.primary_url
+        model = active_router.primary_model
+    else:
+        url = active_router.edge_url
+        model = active_router.edge_model
 
     # Prepend task token for fine-tuned edge models if applicable
     fb_prompt = prompt
@@ -58,6 +77,16 @@ async def _execute_generation(
     res = await _post_ollama(url, model, fb_prompt, timeout_seconds=timeout_seconds, options=options)
     if res:
         return res
+
+    # If primary failed during call, trip circuit and fallback to edge model
+    if active_router.state == CircuitState.PRIMARY:
+        active_router.trip_to_edge("Primary generation failed or timed out during execution")
+        edge_url = active_router.edge_url
+        edge_model = active_router.edge_model
+        logger.info(f"Retrying generation on edge fallback {edge_url} ({edge_model})")
+        res = await _post_ollama(edge_url, edge_model, fb_prompt, timeout_seconds=timeout_seconds, options=options)
+        if res:
+            return res
 
     # If running outside container (e.g. host.docker.internal unresolved), try localhost
     if "host.docker.internal" in url:
@@ -219,7 +248,12 @@ def build_compressed_prompt(telemetry_lines: List[str]) -> str:
     )
     return prompt
 
-async def generate_ai_analysis(ticker: str, metrics: dict, portfolio_ctx: dict | None = None) -> str | None:
+async def generate_ai_analysis(
+    ticker: str,
+    metrics: dict,
+    portfolio_ctx: dict | None = None,
+    router: Optional[DualEngineRouter] = None,
+) -> str | None:
     """
     Generates institutional technical diagnosis using edge compressed prompt format.
     Enforces temperature: 0.0, num_predict: 128.
@@ -230,29 +264,40 @@ async def generate_ai_analysis(ticker: str, metrics: dict, portfolio_ctx: dict |
         "temperature": 0.0,
         "num_predict": 128,
     }
-    return await _execute_generation(prompt, timeout_seconds=30.0, options=options)
+    return await _execute_generation(prompt, timeout_seconds=30.0, options=options, router=router)
 
 async def generate_batch_ai_analysis(
     items: List[Dict[str, Any]],
-    batch_size: int = 2,
+    batch_size: Optional[int] = None,
     timeout_seconds: float = 30.0,
+    router: Optional[DualEngineRouter] = None,
 ) -> Dict[str, str]:
     """
-    Micro-batches inference requests to a maximum of 2 tickers per call.
+    Micro-batches inference requests.
+    When circuit breaker is in EDGE fallback mode, enforces 4-ticker micro-batches (batch_size=4).
     Returns a mapping of ticker -> output text.
     """
     results: Dict[str, str] = {}
     if not items:
         return results
 
+    active_router = router or default_router
+    await active_router.check_and_update_state()
+
+    # Determine batch size: if not explicitly given, use 4 for EDGE mode, 2 for default
+    if batch_size is None:
+        effective_batch_size = 4 if active_router.state == CircuitState.EDGE else 2
+    else:
+        effective_batch_size = batch_size
+
     options = {
         "temperature": 0.0,
         "num_predict": 128,
     }
 
-    # Process in micro-batches of maximum 2 tickers
-    for i in range(0, len(items), batch_size):
-        batch = items[i:i + batch_size]
+    # Process in micro-batches
+    for i in range(0, len(items), effective_batch_size):
+        batch = items[i:i + effective_batch_size]
         telemetry_lines = []
         for item in batch:
             tkr = item.get("ticker", "")
@@ -261,15 +306,18 @@ async def generate_batch_ai_analysis(
             telemetry_lines.append(build_compressed_telemetry(tkr, m, ctx))
 
         prompt = build_compressed_prompt(telemetry_lines)
-        response = await _execute_generation(prompt, timeout_seconds=timeout_seconds, options=options)
+        response = await _execute_generation(
+            prompt,
+            timeout_seconds=timeout_seconds,
+            options=options,
+            router=active_router,
+        )
         
         if response:
             # Parse responses per ticker
-            # If batch has 1 item, whole response maps to it
             if len(batch) == 1:
                 results[batch[0]["ticker"]] = response
             else:
-                # Multiple tickers: parse by ticker symbol heading
                 blocks = {}
                 current_ticker = None
                 current_lines = []
@@ -300,7 +348,11 @@ async def generate_batch_ai_analysis(
 
     return results
 
-async def generate_opportunity_rotation_analysis(laggards: list, leaders: list) -> str | None:
+async def generate_opportunity_rotation_analysis(
+    laggards: list,
+    leaders: list,
+    router: Optional[DualEngineRouter] = None,
+) -> str | None:
     """
     Synthesizes an active rotation strategy pairing weak/broken holdings
     with top Stage 2 breakout setups to maximize portfolio CAGR.
@@ -330,4 +382,4 @@ Provide a high-conviction Telegram HTML briefing:
 3. <b>Immediate Execution Steps</b>: Clear directives for the investor today.
 Use concise bullets and HTML tags (<b>, <code>). Do not invent false prices.
 """
-    return await _execute_generation(prompt, timeout_seconds=45.0)
+    return await _execute_generation(prompt, timeout_seconds=45.0, router=router)

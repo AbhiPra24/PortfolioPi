@@ -1,8 +1,11 @@
 """Telegram bot command handlers for processing user requests."""
 
+import asyncio
 import html
 import logging
+import re
 import sqlite3
+import urllib.parse
 
 import aiosqlite
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -69,6 +72,92 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = format_signals_message(rows)
     await update.message.reply_text(msg, parse_mode='HTML')
+
+
+SESSION_REGEX = re.compile(r"apisession=([a-zA-Z0-9]+)", re.IGNORECASE)
+RAW_TOKEN_REGEX = re.compile(r"^[a-zA-Z0-9]{8,64}$")
+
+
+def extract_session_token(text: str) -> str | None:
+    """Extract session token from URL / query param or raw token string."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    match = SESSION_REGEX.search(cleaned)
+    if match:
+        return match.group(1)
+    if RAW_TOKEN_REGEX.fullmatch(cleaned):
+        return cleaned
+    return None
+
+
+@owner_only
+async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate ICICI Breeze API login URL and send instructions to the owner."""
+    api_key = settings.api_key.get_secret_value()
+    encoded_key = urllib.parse.quote_plus(api_key)
+    login_url = f"https://api.icicidirect.com/apiuser/login?api_key={encoded_key}"
+
+    msg = (
+        "🔐 <b>ICICI Breeze API Authentication</b>\n\n"
+        "Click the link below on your phone or desktop, complete your ICICI Direct 2FA login, "
+        "and copy the redirect URL (or token) back into this chat:\n\n"
+        f'🔗 <a href="{login_url}"><b>Click Here to Log In to Breeze</b></a>\n\n'
+        "<i>Once logged in, paste the entire redirect URL or the <code>apisession</code> token directly here.</i>"
+    )
+    await update.message.reply_text(msg, parse_mode='HTML', disable_web_page_preview=True)
+
+
+async def handle_session_token_submission(token: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Validate customer details with Breeze, persist token, trigger sync, and reply."""
+    from core.data_refresh import run_breeze_sync
+
+    try:
+        breeze = BreezeClient(token)
+        details = breeze.get_customer_details(api_session=token)
+        if details.get("Success"):
+            await save_session(token)
+            cust = details["Success"]
+            user_name = cust.get("idirect_user_name", "N/A")
+            user_id = cust.get("idirect_userid", "N/A")
+            last_login = cust.get("idirect_lastlogin_time", "N/A")
+
+            # Trigger run_breeze_sync in background task
+            asyncio.create_task(run_breeze_sync(context.application, silent=False))
+
+            success_msg = (
+                "✅ <b>Breeze Session Authenticated Successfully!</b>\n\n"
+                f"👤 <b>User:</b> {html.escape(str(user_name))} (<code>{html.escape(str(user_id))}</code>)\n"
+                f"🕒 <b>Last Login:</b> {html.escape(str(last_login))}\n\n"
+                "🚀 <i>Session saved. Background portfolio & market sync initiated!</i>"
+            )
+            await update.message.reply_text(success_msg, parse_mode='HTML')
+        else:
+            err = details.get("Error", "Unknown Breeze validation error")
+            await update.message.reply_text(
+                f"❌ <b>Breeze Validation Failed:</b>\n<code>{html.escape(str(err))}</code>",
+                parse_mode='HTML',
+            )
+    except Exception as e:
+        logger.exception("Error validating Breeze session token")
+        await update.message.reply_text(
+            f"❌ <b>Error Validating Token:</b>\n<code>{html.escape(str(e))}</code>",
+            parse_mode='HTML',
+        )
+
+
+@owner_only
+async def session_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inspect incoming text messages for apisession parameter or raw session token."""
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text.strip()
+    token = extract_session_token(text)
+    if not token:
+        return
+
+    await handle_session_token_submission(token, update, context)
 
 
 @owner_only
@@ -381,6 +470,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/trades [summary] - View executed trades, drag &amp; performance metrics\n"
         "/orders - View recent order book\n"
         "/status - View system status\n"
+        "/login - Generate Breeze login link\n"
         "/refresh_session &lt;token&gt; - Update Breeze API session\n"
         "/analyse &lt;TICKER&gt; - Get technicals, AI analyst, and action guidance\n"
         "/help - Show this message"

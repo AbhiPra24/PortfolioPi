@@ -74,6 +74,17 @@ def get_db_connection(db_path: str) -> sqlite3.Connection:
         raise FileNotFoundError(f"Database not found at: {db_path}")
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    try:
+        from core.database import configure_sqlite3_connection
+        configure_sqlite3_connection(conn)
+    except Exception:
+        cur = conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL;")
+        cur.execute("PRAGMA synchronous=NORMAL;")
+        cur.execute("PRAGMA busy_timeout=5000;")
+        cur.execute("PRAGMA temp_store=MEMORY;")
+        cur.execute("PRAGMA cache_size=-64000;")
+        cur.close()
     return conn
 
 

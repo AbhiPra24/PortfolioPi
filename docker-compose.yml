@@ -12,12 +12,16 @@ services:
           memory: 512M
     env_file:
       - .env
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONPYCACHEPREFIX=/tmp/pycache
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    tmpfs:
+      - /app/logs:rw,noexec,nosuid,size=64m
+      - /tmp:rw,noexec,nosuid,size=128m
     volumes:
-
       - ./data:/app/data
-      - ./logs:/app/logs
     healthcheck:
       test: ["CMD", "python", "healthcheck.py"]
       interval: 10m
