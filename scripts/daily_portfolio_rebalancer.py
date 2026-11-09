@@ -25,6 +25,14 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
+    from algo.ai_analyst import audit_holdings
+except ImportError:
+    try:
+        from scripts.ollama_common import audit_holdings
+    except ImportError:
+        audit_holdings = None
+
+try:
     from scripts.ollama_common import (
         get_db_connection,
         query_llm_with_fallback,
@@ -551,7 +559,7 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
             "cash_buffer_retained": cash_buffer_retained,
             "total_annual_dividend_boost": round(sum(o["projected_annual_dividend_boost"] for o in reinvestment_orders), 2),
         },
-        "top_holdings": [holdings_dict[r["stock_code"]] for r in rows[:10]],
+        "top_holdings": [holdings_dict[r["stock_code"]] for r in rows[:10]], "all_holdings": [holdings_dict[r["stock_code"]] for r in rows],
     }
 
 
@@ -616,6 +624,8 @@ def main():
     )
     parser.add_argument("--db", default=None, help="Path to SQLite database")
     parser.add_argument("--dry-run", action="store_true", help="Output raw metrics JSON and tax ledger without calling LLM")
+    parser.add_argument("--edge-audit", dest="edge_audit", action="store_true", default=True, help="Run 2-ticker chunked edge auditor (pralabs:edge)")
+    parser.add_argument("--no-edge-audit", dest="edge_audit", action="store_false", help="Skip edge auditor")
     parser.add_argument("--ai", dest="ai", action="store_true", default=True, help="Run AI quantitative analysis (default True)")
     parser.add_argument("--no-ai", dest="ai", action="store_false", help="Skip AI analysis")
     parser.add_argument("--telegram", action="store_true", help="Broadcast generated memo to Telegram owners via urllib")
@@ -680,6 +690,53 @@ def main():
 
         print("\n" + "=" * 80)
 
+    # 3b. Edge Risk Auditor via 2-ticker Micro-Batches
+    edge_audit_alerts = []
+    if args.edge_audit and audit_holdings:
+        print("[*] Running 2-ticker chunked edge risk auditor across portfolio holdings...")
+        try:
+            raw_holdings = rebalancer_data.get("all_holdings", [])
+            formatted = []
+            for h in raw_holdings:
+                cmp = float(h.get("current_price", h.get("cmp", 1.0)))
+                stop = cmp * 0.95
+                rat = str(h.get("rationale", ""))
+                if "Chandelier Exit (" in rat:
+                    try:
+                        stop = float(rat.split("Chandelier Exit (")[1].split(")")[0])
+                    except Exception:
+                        pass
+                formatted.append({
+                    "ticker": h.get("stock_code", h.get("ticker", "TKR")),
+                    "cmp": cmp,
+                    "stage": h.get("stage", h.get("weinstein_stage", 2)),
+                    "minervini_pass": 5,
+                    "minervini_total": 7,
+                    "rs_rating": int(h.get("composite_score") or 60),
+                    "stop_loss_price": stop,
+                    "pnl_pct": float(h.get("pnl_pct", h.get("unrealized_pnl_pct", 0.0))),
+                    "dist_days": 2,
+                    "asset_class": h.get("asset_class", "EQUITY")
+                })
+            
+            audit_lines = audit_holdings(formatted, chunk_size=2)
+            
+            # Filter for non-HOLD actionable alerts
+            for i in range(0, len(audit_lines), 2):
+                header_line = audit_lines[i]
+                detail_line = audit_lines[i+1] if i+1 < len(audit_lines) else ""
+                if "ACT:HOLD" not in header_line:
+                    edge_audit_alerts.append(f"{header_line}\n{detail_line}")
+                    
+            print(f"[✓] Edge audit completed: {len(edge_audit_alerts)} actionable alerts out of {len(formatted)} holdings.")
+            if edge_audit_alerts:
+                print("--- Actionable Edge Alerts ---")
+                for alert in edge_audit_alerts:
+                    print(alert)
+                print("------------------------------\n")
+        except Exception as e:
+            print(f"[!] Edge audit encountered an error: {e}")
+
     # 4. Telegram Notification Broadcaster
     if args.telegram:
         env_vars = load_env_file()
@@ -690,6 +747,10 @@ def main():
             print("[Telegram Error] TELEGRAM_BOT_TOKEN or TELEGRAM_OWNER_IDS missing in environment or .env file.")
         else:
             owner_ids = [x.strip() for x in owner_ids_str.split(",") if x.strip()]
+            alert_section = ""
+            if edge_audit_alerts:
+                alert_section = "\n🚨 *Actionable Edge Directives*:\n" + "\n\n".join([f"`{a}`" for a in edge_audit_alerts]) + "\n\n"
+
             header = (
                 f"📊 *PortfolioPi Daily Rebalancer & Tax Shield Report*\n"
                 f"• *Current Value*: ₹{summary['current_market_value']:,.2f} ({summary['total_pnl_pct']:+.2f}%)\n"
@@ -697,7 +758,7 @@ def main():
                 f"• *Tax Shield Savings*: ₹{matrix['direct_cash_tax_shield_saved']:,.2f} (Net Tax: ₹{matrix['tax_liability_after_harvest']:,.2f})\n"
                 f"• *Dividend Boost*: +₹{ledger['total_annual_dividend_boost']:,.2f}/yr\n\n"
             )
-            broadcast_text = header + (generated_memo if generated_memo else "AI memo skipped or generated in dry-run mode.")
+            broadcast_text = header + alert_section + (generated_memo if generated_memo else "AI memo skipped or generated in dry-run mode.")
             print(f"[*] Broadcasting rebalancer report to Telegram owner IDs: {owner_ids}...")
             results = send_telegram_broadcast(bot_token, owner_ids, broadcast_text)
             for cid, success, err in results:
