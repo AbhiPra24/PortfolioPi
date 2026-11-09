@@ -1,0 +1,11 @@
+root ::= line "\n• " directive "\n"
+line ::= ticker " | STG:" stage " | STOP:" stop_status " | ACT:" action
+
+ticker ::= [A-Z0-9_]{2,12}
+stage  ::= [1-4]
+stop_status ::= "PASS (+" [0-9]+ "." [0-9]+ "%)" 
+              | "BREACH (-" [0-9]+ "." [0-9]+ "%)" 
+              | "MACRO:GOLDEN_CROSS" 
+              | "NAV:STALE (>180d)"
+action ::= "EXIT" | "LOCK_PROFIT" | "HOLD" | "TRIM" | "BUY_MORE" | "DEFER_TAX_HOLD"
+directive ::= [^\n]{10,120}
