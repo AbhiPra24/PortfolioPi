@@ -590,13 +590,120 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def sgb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Scan SGB secondary market tranches against spot gold and display arbitrage opportunities."""
+    from algo.sgb_arbitrage import SGB_TRANCHE_METADATA, analyze_sgb_secondary_market
+    from core.providers import YFinanceProvider
+
+    await update.message.reply_text("🔍 <i>Scanning SGB secondary market tranches & gold spot...</i>", parse_mode='HTML')
+
+    # 1. Fetch benchmark gold price (GOLDBEES or gold spot)
+    yfp = YFinanceProvider()
+    goldbees_quote = yfp.get_quote("GOLDBEES")
+    goldbees_price = goldbees_quote.get("ltp") if goldbees_quote else None
+
+    # 2. Fetch prices for common SGB tranches
+    sgb_quotes = {}
+    tickers = list(SGB_TRANCHE_METADATA.keys())[:8]  # Top active liquid tranches
+    for sym in tickers:
+        q = yfp.get_quote(sym)
+        if q and q.get("ltp"):
+            sgb_quotes[sym] = float(q["ltp"])
+
+    if not sgb_quotes:
+        # Fallback sample reference if market closed / quotes missing
+        sgb_quotes = {"SGBOCT26": 7350.0, "SGBMAY29": 7400.0, "SGBDEC28": 7420.0}
+
+    opps, payload = analyze_sgb_secondary_market(
+        sgb_quotes=sgb_quotes,
+        goldbees_price=goldbees_price or 82.5,
+        discount_threshold_pct=2.0
+    )
+
+    if not opps:
+        await update.message.reply_text("No active SGB arbitrage opportunities found currently.", parse_mode='HTML')
+        return
+
+    msg = "🏆 <b>Sovereign Gold Bond (SGB) Secondary Arbitrage</b>\n\n"
+    for o in opps[:5]:
+        status_icon = "🟢 <b>ARBITRAGE</b>" if o.is_arbitrage_flagged else "⚪ FAIR"
+        msg += (
+            f"• <b>{html.escape(o.symbol)}</b>: ₹{o.traded_price:,.0f} ({status_icon})\n"
+            f"   Discount vs Spot: <b>{o.discount_pct:+.2f}%</b> | YTM: <b>{o.ytm_pct:.2f}%</b>\n"
+            f"   Maturity: {o.maturity_date} ({o.years_to_maturity:.1f} yrs left)\n"
+        )
+
+    if payload and payload.get("upi_link"):
+        upi = payload["upi_link"]
+        msg += f'\n💳 <a href="{upi}"><b>1-Tap UPI Deposit / Mandate</b></a>\n'
+    if payload and payload.get("trade_racer_csv"):
+        msg += f"\n📋 <b>Trade Racer Basket CSV:</b>\n<code>{html.escape(payload['trade_racer_csv'].strip())}</code>"
+
+    await update.message.reply_text(msg, parse_mode='HTML', disable_web_page_preview=True)
+
+
+@owner_only
+async def cashsweep_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Evaluate idle cash float and output sweeps to LIQUIDBEES or Stage 2 compounder."""
+    from algo.liquid_float_sweeper import evaluate_liquid_float_sweep
+
+    await update.message.reply_text("💸 <i>Evaluating idle cash drag & paused SIP float...</i>", parse_mode='HTML')
+
+    unalloc = 0.0
+    breeze = await get_breeze_client()
+    if breeze:
+        try:
+            funds = breeze.get_funds()
+            if funds.get("Success"):
+                unalloc = float(funds["Success"].get("unallocated_balance", 0) or 0)
+        except Exception:
+            pass
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        async with db.execute("SELECT ticker, stage FROM stage_history WHERE stage = 2 ORDER BY date DESC LIMIT 1") as cur:
+            row = await cur.fetchone()
+            stage2_ticker = row[0] if row else "POWINF"
+
+    report = await evaluate_liquid_float_sweep(
+        db_path=settings.db_path,
+        unallocated_cash=unalloc,
+        stage2_leader_ticker=stage2_ticker,
+        threshold=5000.0
+    )
+
+    msg = (
+        f"🌊 <b>Liquid Float & Cash Drag Sweeper</b>\n\n"
+        f"<b>Unallocated Cash:</b> ₹{report.unallocated_cash:,.2f}\n"
+        f"<b>Paused SIP Float:</b> ₹{report.paused_sip_float:,.2f}\n"
+        f"<b>Total Idle Float:</b> ₹{report.total_idle_float:,.2f} (Threshold: ₹{report.threshold:,.0f})\n\n"
+    )
+
+    if not report.sweep_triggered:
+        msg += "✅ <i>Idle cash is within safe operational thresholds. No cash drag sweep needed.</i>"
+    else:
+        msg += f"🚨 <b>Action: {report.directive.action}</b>\n"
+        msg += f"👉 <i>{report.directive.rationale}</i>\n\n"
+        if report.execution_payload:
+            csv_str = report.execution_payload.get("trade_racer_csv", "")
+            upi = report.execution_payload.get("upi_link", "")
+            if csv_str:
+                msg += f"📋 <b>Trade Racer Basket:</b>\n<code>{html.escape(csv_str.strip())}</code>\n"
+            if upi:
+                msg += f'\n💳 <a href="{upi}"><b>1-Tap UPI Mandate Link</b></a>\n'
+
+    await update.message.reply_text(msg, parse_mode='HTML', disable_web_page_preview=True)
+
+
+@owner_only
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Portfolio", callback_data="portfolio"), InlineKeyboardButton("📈 Signals", callback_data="signals")],
-        [InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"), InlineKeyboardButton("💰 Funds", callback_data="funds")],
-        [InlineKeyboardButton("🧾 Trades", callback_data="trades"), InlineKeyboardButton("📋 Orders", callback_data="orders")],
-        [InlineKeyboardButton("📋 SIP Book", callback_data="sips"), InlineKeyboardButton("💵 Cashflow", callback_data="cashflow")],
-        [InlineKeyboardButton("⚙️ Status", callback_data="status")],
+        [InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"), InlineKeyboardButton("🔍 Audit", callback_data="audit")],
+        [InlineKeyboardButton("💰 Funds", callback_data="funds"), InlineKeyboardButton("💵 Cashflow", callback_data="cashflow")],
+        [InlineKeyboardButton("🏆 SGB Arbitrage", callback_data="sgb"), InlineKeyboardButton("🌊 Cash Sweep", callback_data="cashsweep")],
+        [InlineKeyboardButton("📋 SIP Book", callback_data="sips"), InlineKeyboardButton("🧾 Trades", callback_data="trades")],
+        [InlineKeyboardButton("📋 Orders", callback_data="orders"), InlineKeyboardButton("⚙️ Status", callback_data="status")],
+        [InlineKeyboardButton("🔐 Login Breeze", callback_data="login")],
     ]
     await update.message.reply_text("Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -609,12 +716,16 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         "portfolio": portfolio_command,
         "signals": signals_command,
         "action_plan": action_plan_command,
+        "audit": audit_command,
         "funds": funds_command,
+        "cashflow": cashflow_command,
+        "sgb": sgb_command,
+        "cashsweep": cashsweep_command,
+        "sips": sips_command,
         "trades": trades_command,
         "orders": orders_command,
-        "sips": sips_command,
-        "cashflow": cashflow_command,
         "status": status_command,
+        "login": login_command,
     }
     handler = dispatch.get(query.data)
     if handler:

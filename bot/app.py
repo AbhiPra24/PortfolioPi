@@ -10,6 +10,7 @@ from .handlers import (
     analyse_command,
     audit_command,
     cashflow_command,
+    cashsweep_command,
     funds_command,
     help_command,
     login_command,
@@ -20,6 +21,7 @@ from .handlers import (
     price_command,
     refresh_session_command,
     session_message_handler,
+    sgb_command,
     signals_command,
     sips_command,
     start_command,
@@ -36,6 +38,8 @@ COMMANDS = [
     BotCommand("signals", "View today's signals"),
     BotCommand("sips", "View active SIP book & quant guidance"),
     BotCommand("cashflow", "View dividend & cashflow projections"),
+    BotCommand("sgb", "SGB secondary market arbitrage"),
+    BotCommand("cashsweep", "Liquid float & cash drag sweeper"),
     BotCommand("analyse", "Full analysis for one ticker"),
     BotCommand("audit", "Run edge risk audit on active holdings"),
     BotCommand("action_plan", "View buy/sell/hold verdicts"),
@@ -63,6 +67,8 @@ def create_app() -> Application:
     app.add_handler(CommandHandler("signals", signals_command))
     app.add_handler(CommandHandler("sips", sips_command))
     app.add_handler(CommandHandler("cashflow", cashflow_command))
+    app.add_handler(CommandHandler("sgb", sgb_command))
+    app.add_handler(CommandHandler("cashsweep", cashsweep_command))
     app.add_handler(CommandHandler("watchlist", watchlist_command))
     app.add_handler(CommandHandler("price", price_command))
     app.add_handler(CommandHandler("funds", funds_command))
