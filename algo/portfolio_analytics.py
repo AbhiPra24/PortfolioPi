@@ -2,9 +2,17 @@
 portfolio optimization (Mean-Variance, Min Vol, HRP), and guardrail validation.
 Inspired by Finance-Guru and EigenLedger.
 """
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
+
+from core.portfolio_analytics import (
+    compute_downside_deviation,
+    compute_sortino_ratio,
+    compute_treynor_ratio,
+    compute_jensens_alpha,
+    compute_rolling_max_drawdown,
+)
 
 
 def compute_concentration(holdings_df: pd.DataFrame, top_n: int = 5) -> dict:
@@ -123,7 +131,7 @@ def compute_risk_metrics(
         "max_drawdown": round(max_dd * 100, 2),  # in %
         "var_95": round(abs(var_95) * 100, 2),  # in %
         "cvar_95": round(abs(cvar_95) * 100, 2),  # in %
-        "treynor_ratio": round((cagr - risk_free_rate) / beta, 2) if beta != 0 else 0.0,
+        "treynor_ratio": round(compute_treynor_ratio(cagr, risk_free_rate, beta), 2),
         "jensens_alpha": round(alpha * 100, 2),
         "beta": round(beta, 2),
         "alpha": round(alpha * 100, 2),  # in %

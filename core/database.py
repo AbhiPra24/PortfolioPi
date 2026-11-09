@@ -238,6 +238,38 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio_risk_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                cagr_pct REAL,
+                benchmark_cagr_pct REAL,
+                beta REAL,
+                jensens_alpha REAL,
+                jensens_alpha_pct REAL,
+                sharpe_ratio REAL,
+                sortino_ratio REAL,
+                treynor_ratio REAL,
+                max_drawdown REAL,
+                max_drawdown_pct REAL,
+                downside_deviation REAL
+            )
+        """)
+
+        # Backward compatibility column migrations for existing portfolio_risk_metrics tables
+        for col_def in [
+            "sortino_ratio REAL",
+            "treynor_ratio REAL",
+            "jensens_alpha REAL",
+            "max_drawdown REAL",
+            "downside_deviation REAL",
+        ]:
+            col_name = col_def.split()[0]
+            try:
+                await db.execute(f"ALTER TABLE portfolio_risk_metrics ADD COLUMN {col_def};")
+            except Exception:
+                pass  # Column already exists
+
         # Ensure critical unique constraints / indexes exist for upserts
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_holdings_snapshot_stock_code ON holdings_snapshot(stock_code);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_mapping_stock_code ON ticker_mapping(stock_code);")

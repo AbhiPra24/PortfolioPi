@@ -14,6 +14,7 @@ from app_config import settings
 from bot.broadcaster import broadcast_message
 from bot.formatters import format_portfolio_message, format_signals_message
 from core.breeze_client import BreezeClient, SessionExpiredError
+from core.portfolio_analytics import update_portfolio_risk_metrics
 from core.session_store import get_session
 
 logger = logging.getLogger(__name__)
@@ -259,6 +260,12 @@ async def run_breeze_sync(app=None, silent=True):
                         VALUES (?, ?, ?)
                     """, (tot_invested, tot_current, tot_current - tot_invested))
                     await db.commit()
+
+                    # Trigger portfolio risk metrics computation
+                    try:
+                        await update_portfolio_risk_metrics(db)
+                    except Exception as e:
+                        logger.warning(f"Could not update portfolio risk metrics during breeze sync: {e}")
 
             # 2. Opportunistic Ticker Mapping
             new_mappings_count = 0
@@ -530,6 +537,12 @@ async def run_market_data_refresh(app=None, send_digest=False):
             await db.execute("DELETE FROM signals WHERE timestamp < datetime('now', '-30 days')")
             await db.execute("DELETE FROM job_heartbeats WHERE timestamp < datetime('now', '-7 days')")
             await db.commit()
+
+            # Update institutional downside risk metrics
+            try:
+                await update_portfolio_risk_metrics(db)
+            except Exception as e:
+                logger.warning(f"Could not update portfolio risk metrics during market refresh: {e}")
 
             # Record heartbeat
             await db.execute("INSERT INTO job_heartbeats (job_name) VALUES (?)", ("run_market_data_refresh",))
