@@ -439,22 +439,27 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @owner_only
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "<b>Commands:</b>\n"
-        "/start - Welcome message\n"
-        "/portfolio - View current holdings\n"
-        "/signals - View today's signals\n"
-        "/action_plan - View portfolio action classification\n"
+        "<b>🤖 PortfolioPi Bot Commands:</b>\n\n"
+        "/start - Welcome message & bot overview\n"
+        "/menu - Interactive dashboard menu with quick-actions\n"
+        "/portfolio - View current holdings & valuation\n"
+        "/signals - View today's top technical & momentum signals\n"
+        "/action_plan - View buy/sell/hold stage verdicts\n"
+        "/audit - Run edge risk audit on active holdings (pralabs:edge)\n"
         "/sips - View active SIP book & quant allocation\n"
         "/cashflow - View dividend & cashflow projections\n"
+        "/sgb - Sovereign Gold Bond secondary market arbitrage & YTM\n"
+        "/cashsweep - Sweep idle float into LIQUIDBEES or Stage 2 compounders\n"
         "/watchlist list|add|remove &lt;TICKER&gt; - Manage watchlist\n"
-        "/price &lt;TICKER&gt; - Get current stock price\n"
-        "/funds - View available funds and margins\n"
+        "/price &lt;TICKER&gt; - Get real-time/latest stock price\n"
+        "/funds - View available funds, cash limits, and margins\n"
         "/trades [summary] - View executed trades, drag &amp; performance metrics\n"
         "/orders - View recent order book\n"
-        "/status - View system status\n"
+        "/status - View system status, SQLite WAL health, and models\n"
         "/refresh_session &lt;token&gt; - Update Breeze API session\n"
-        "/analyse &lt;TICKER&gt; - Get technicals, AI analyst, and action guidance\n"
-        "/help - Show this message"
+        "/analyse &lt;TICKER&gt; - Full technical diagnosis with AI commentary\n"
+        "/help - Show this message\n\n"
+        "💡 <i>Tip: You can also paste your <code>apisession=...</code> redirect URL or raw session token directly into the chat to refresh Breeze!</i>"
     )
     await update.message.reply_text(help_text, parse_mode='HTML')
 
