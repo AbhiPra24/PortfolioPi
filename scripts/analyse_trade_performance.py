@@ -239,19 +239,21 @@ async def get_trades_from_db(db_path: str, limit: int = 50) -> List[Dict[str, An
 
 
 async def fetch_portfolio_context(db_path: str) -> Dict[str, Any]:
-    """Fetch current portfolio holdings snapshot and latest signals to cross-reference with trades."""
+    """Fetch current portfolio holdings snapshot, latest signals, and active tax lots."""
     holdings: Dict[str, Dict[str, Any]] = {}
     signals: Dict[str, Dict[str, Any]] = {}
+    tax_lots: List[Dict[str, Any]] = []
 
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         try:
-            async with db.execute("SELECT stock_code, quantity, average_price, current_price FROM holdings_snapshot") as cur:
+            async with db.execute("SELECT stock_code, quantity, average_price, current_price, asset_class FROM holdings_snapshot") as cur:
                 async for row in cur:
                     holdings[row["stock_code"].upper()] = {
                         "quantity": row["quantity"],
                         "average_price": row["average_price"],
                         "current_price": row["current_price"],
+                        "asset_class": row["asset_class"] if "asset_class" in row.keys() else "EQUITY",
                     }
         except Exception:
             pass
@@ -274,7 +276,21 @@ async def fetch_portfolio_context(db_path: str) -> Dict[str, Any]:
         except Exception:
             pass
 
-    return {"holdings": holdings, "signals": signals}
+        try:
+            async with db.execute(
+                """
+                SELECT lot_id, stock_code, buy_date, quantity, buy_price, holding_days,
+                       tax_category, days_to_ltcg, unrealized_gain_per_share, price_cushion_required
+                FROM tax_lots_view
+                ORDER BY stock_code, buy_date
+                """
+            ) as cur:
+                async for row in cur:
+                    tax_lots.append(dict(row))
+        except Exception:
+            pass
+
+    return {"holdings": holdings, "signals": signals, "tax_lots": tax_lots}
 
 
 async def run_trade_performance_analysis(days: int = 30, use_breeze: bool = True):
@@ -368,6 +384,39 @@ async def run_trade_performance_analysis(days: int = 30, use_breeze: bool = True
     else:
         for r in rows:
             print(f"  {r[0]} | {r[1]:<8} | {r[2]:<4} | Qty: {r[3]:<4} | Turn: {r[4]:<10} | Held: {r[6]} | Action: {r[7]}")
+
+    # 3. Display Active FIFO Tax Lots & Tax-Hurdle Evaluation
+    active_tax_lots = context.get("tax_lots", [])
+    if not active_tax_lots and trades:
+        # Fallback to computing FIFO tax lots dynamically from trade history
+        from algo.tax_lots import compute_fifo_tax_lots
+        curr_prices = {k: v["current_price"] for k, v in holdings.items() if v.get("current_price")}
+        active_tax_lots = compute_fifo_tax_lots(trades, current_prices=curr_prices)
+
+    if active_tax_lots:
+        print("\n" + "=" * 70)
+        print(" 🏷️ ACTIVE FIFO TAX LOTS & CONVERSION HURDLES")
+        print("=" * 70)
+        lot_rows = []
+        for lot in active_tax_lots:
+            lot_rows.append([
+                str(lot.get("lot_id", "-"))[:12],
+                lot.get("stock_code", "-"),
+                str(lot.get("buy_date", "-"))[:10],
+                lot.get("quantity", 0),
+                f"₹{float(lot.get('buy_price', 0)):,.1f}",
+                lot.get("holding_days", 0),
+                lot.get("tax_category", "-"),
+                lot.get("days_to_ltcg", 0),
+                f"₹{float(lot.get('unrealized_gain_per_share', 0)):,.1f}",
+                f"{float(lot.get('price_cushion_required', 0)):.1f}%",
+            ])
+        lot_headers = ["Lot ID", "Symbol", "Buy Date", "Qty", "Buy Price", "Days Held", "Tax Cat", "Days to LTCG", "Gain/Sh", "Cushion Req"]
+        if HAS_TABULATE:
+            print(tabulate(lot_rows, headers=lot_headers, tablefmt="fancy_grid"))
+        else:
+            for r in lot_rows:
+                print(f"  {r[1]:<8} | Buy: {r[2]} | Qty: {r[3]:<4} | Price: {r[4]:<9} | {r[6]:<4} | Days to LTCG: {r[7]:<3} | Gain/Sh: {r[8]:<9} | Cushion: {r[9]}")
 
     print("\n" + "=" * 70)
 

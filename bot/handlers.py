@@ -446,6 +446,12 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             signal_row = await cur.fetchone()
         async with db.execute("SELECT * FROM stock_actions WHERE stock_code = ?", (ticker,)) as cur:
             action_row = await cur.fetchone()
+        async with db.execute("SELECT * FROM holdings_snapshot WHERE stock_code = ?", (ticker,)) as cur:
+            holding_row = await cur.fetchone()
+        async with db.execute("SELECT stage FROM stage_history WHERE stock_code = ? ORDER BY date DESC LIMIT 1", (ticker,)) as cur:
+            stage_row = await cur.fetchone()
+        async with db.execute("SELECT tax_category, holding_days FROM tax_lots_view WHERE stock_code = ? ORDER BY buy_date ASC LIMIT 1", (ticker,)) as cur:
+            tax_lot_row = await cur.fetchone()
 
     breeze = await get_breeze_client()
     if breeze:
@@ -462,15 +468,33 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .formatters import format_stock_analysis_message
     msg = format_stock_analysis_message(ticker, signal_row, action_row, quote)
 
-    # Enrich with AI analyst assessment from Ollama
-    metrics = {
-        "quote": quote,
-        "signal": dict(signal_row) if signal_row else {},
-        "action": dict(action_row) if action_row else {},
+    # Enrich with AI analyst assessment from Ollama using compressed telemetry
+    is_holding = bool(holding_row and (holding_row["quantity"] or 0) > 0)
+    pnl_pct = 0.0
+    if is_holding and holding_row["average_price"]:
+        cmp_p = quote["ltp"] if (quote and quote.get("ltp")) else (holding_row["current_price"] or 0.0)
+        avg_p = float(holding_row["average_price"])
+        if avg_p > 0:
+            pnl_pct = round((cmp_p - avg_p) / avg_p * 100.0, 1)
+
+    portfolio_ctx = {
+        "is_holding": is_holding,
+        "pnl_pct": pnl_pct,
+        "tax_term": "LT" if (tax_lot_row and str(tax_lot_row["tax_category"]).upper().startswith("LT")) else "ST",
+        "holding_days": tax_lot_row["holding_days"] if tax_lot_row else None,
     }
-    ai_commentary = await generate_ai_analysis(ticker, metrics)
+
+    metrics = {
+        "ticker": ticker,
+        "price": quote["ltp"] if (quote and quote.get("ltp")) else (holding_row["current_price"] if holding_row else None),
+        "stage": stage_row["stage"] if stage_row else None,
+        "signal": dict(signal_row) if signal_row else {},
+        "action": action_row["action"] if action_row else "HOLD",
+        "rationale": action_row["rationale"] if action_row else "",
+    }
+    ai_commentary = await generate_ai_analysis(ticker, metrics, portfolio_ctx)
     if ai_commentary:
-        msg += f"\n\n🤖 <b>AI Analyst Commentary:</b>\n{html.escape(ai_commentary)}"
+        msg += f"\n\n🤖 <b>AI Analyst:</b>\n<code>{html.escape(ai_commentary)}</code>"
 
     await update.message.reply_text(msg, parse_mode='HTML')
 

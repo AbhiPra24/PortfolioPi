@@ -27,9 +27,16 @@ async def init_db():
                 quantity INTEGER,
                 average_price REAL,
                 current_price REAL,
+                asset_class TEXT DEFAULT 'EQUITY',
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Ensure asset_class column exists for existing tables
+        try:
+            await db.execute("ALTER TABLE holdings_snapshot ADD COLUMN asset_class TEXT DEFAULT 'EQUITY';")
+        except Exception:
+            pass  # Column already exists
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
@@ -236,6 +243,73 @@ async def init_db():
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_mapping_stock_code ON ticker_mapping(stock_code);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_history_trade_id ON trades_history(trade_id);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_history_order_id ON orders_history(order_id);")
+
+        # Create/refresh tax_lots_view: FIFO lot matching from trades_history
+        await db.execute("""
+            CREATE VIEW IF NOT EXISTS tax_lots_view AS
+            WITH buys AS (
+                SELECT 
+                    id,
+                    trade_id AS lot_id,
+                    UPPER(TRIM(stock_code)) AS stock_code,
+                    trade_date AS buy_date,
+                    quantity,
+                    CASE WHEN ltp > 0 THEN ltp WHEN quantity > 0 THEN average_cost / quantity ELSE 0.0 END AS buy_price,
+                    SUM(quantity) OVER (PARTITION BY UPPER(TRIM(stock_code)) ORDER BY trade_date, id) AS cum_buy_qty
+                FROM trades_history
+                WHERE UPPER(TRIM(action)) = 'BUY'
+            ),
+            sells AS (
+                SELECT 
+                    UPPER(TRIM(stock_code)) AS stock_code,
+                    COALESCE(SUM(quantity), 0) AS total_sold_qty
+                FROM trades_history
+                WHERE UPPER(TRIM(action)) = 'SELL'
+                GROUP BY UPPER(TRIM(stock_code))
+            ),
+            matched AS (
+                SELECT 
+                    b.id,
+                    b.lot_id,
+                    b.stock_code,
+                    b.buy_date,
+                    b.buy_price,
+                    b.quantity AS original_qty,
+                    b.cum_buy_qty,
+                    COALESCE(s.total_sold_qty, 0) AS total_sold,
+                    CASE 
+                        WHEN b.cum_buy_qty <= COALESCE(s.total_sold_qty, 0) THEN 0
+                        WHEN b.cum_buy_qty - b.quantity < COALESCE(s.total_sold_qty, 0) THEN b.cum_buy_qty - COALESCE(s.total_sold_qty, 0)
+                        ELSE b.quantity
+                    END AS remaining_qty
+                FROM buys b
+                LEFT JOIN sells s ON b.stock_code = s.stock_code
+            )
+            SELECT 
+                m.lot_id,
+                m.stock_code,
+                m.buy_date,
+                m.remaining_qty AS quantity,
+                ROUND(m.buy_price, 2) AS buy_price,
+                CAST(MAX(0, julianday('now') - julianday(m.buy_date)) AS INTEGER) AS holding_days,
+                CASE 
+                    WHEN (julianday('now') - julianday(m.buy_date)) <= 365 THEN 'STCG' 
+                    ELSE 'LTCG' 
+                END AS tax_category,
+                CAST(MAX(0, 365 - (julianday('now') - julianday(m.buy_date))) AS INTEGER) AS days_to_ltcg,
+                ROUND(COALESCE(h.current_price, m.buy_price) - m.buy_price, 2) AS unrealized_gain_per_share,
+                ROUND(
+                    CASE 
+                        WHEN (julianday('now') - julianday(m.buy_date)) <= 365 AND COALESCE(h.current_price, m.buy_price) > m.buy_price 
+                        THEN (0.20 - 0.125) * (COALESCE(h.current_price, m.buy_price) - m.buy_price) / COALESCE(h.current_price, m.buy_price) * 100.0
+                        ELSE 0.0 
+                    END, 
+                    2
+                ) AS price_cushion_required
+            FROM matched m
+            LEFT JOIN holdings_snapshot h ON m.stock_code = UPPER(TRIM(h.stock_code))
+            WHERE m.remaining_qty > 0;
+        """)
 
         await db.commit()
 
