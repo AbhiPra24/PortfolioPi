@@ -8,6 +8,7 @@ from app_config import settings
 from .handlers import (
     action_plan_command,
     analyse_command,
+    audit_command,
     cashflow_command,
     funds_command,
     help_command,
@@ -36,6 +37,7 @@ COMMANDS = [
     BotCommand("sips", "View active SIP book & quant guidance"),
     BotCommand("cashflow", "View dividend & cashflow projections"),
     BotCommand("analyse", "Full analysis for one ticker"),
+    BotCommand("audit", "Run edge risk audit on active holdings"),
     BotCommand("action_plan", "View buy/sell/hold verdicts"),
     BotCommand("watchlist", "Manage watchlist"),
     BotCommand("price", "Get current stock price"),
@@ -70,6 +72,7 @@ def create_app() -> Application:
     app.add_handler(CommandHandler("refresh_session", refresh_session_command))
     app.add_handler(CommandHandler("action_plan", action_plan_command))
     app.add_handler(CommandHandler("analyse", analyse_command))
+    app.add_handler(CommandHandler("audit", audit_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), session_message_handler))
 

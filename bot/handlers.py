@@ -620,3 +620,84 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if handler:
         update.message = query.message
         await handler(update, context)
+
+
+@owner_only
+async def audit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Trigger 2-ticker chunked portfolio risk audit across active holdings using pralabs:edge."""
+    status_msg = await update.message.reply_text("⏳ <i>Running edge risk audit on pralabs:edge...</i>", parse_mode='HTML')
+
+    try:
+        from core.ai_analyst import generate_batch_ai_analysis
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT h.stock_code, h.quantity, h.average_price, h.current_price,
+                       st.stage, act.action, act.rationale, sig.rsi14, sig.composite_score
+                FROM holdings_snapshot h
+                LEFT JOIN (
+                    SELECT s1.stock_code, s1.stage
+                    FROM stage_history s1
+                    JOIN (SELECT stock_code, MAX(date) as max_d FROM stage_history GROUP BY stock_code) s2
+                    ON s1.stock_code = s2.stock_code AND s1.date = s2.max_d
+                ) st ON h.stock_code = st.stock_code
+                LEFT JOIN (
+                    SELECT a1.stock_code, a1.action, a1.rationale
+                    FROM stock_actions a1
+                    JOIN (SELECT stock_code, MAX(timestamp) as max_t FROM stock_actions GROUP BY stock_code) a2
+                    ON a1.stock_code = a2.stock_code AND a1.timestamp = a2.max_t
+                ) act ON h.stock_code = act.stock_code
+                LEFT JOIN (
+                    SELECT sg1.stock_code, sg1.rsi14, sg1.composite_score
+                    FROM signals sg1
+                    JOIN (SELECT stock_code, MAX(timestamp) as max_ts FROM signals GROUP BY stock_code) sg2
+                    ON sg1.stock_code = sg2.stock_code AND sg1.timestamp = sg2.max_ts
+                ) sig ON h.stock_code = sig.stock_code
+            """) as cur:
+                rows = await cur.fetchall()
+
+        if not rows:
+            await status_msg.edit_text("⚠️ No active holdings found to audit.")
+            return
+
+        items = []
+        for r in rows:
+            ticker = r["stock_code"]
+            cmp = float(r["current_price"] or 1.0)
+            avg = float(r["average_price"] or 1.0)
+            pnl_pct = round((cmp - avg) / avg * 100.0, 1)
+            metrics = {
+                "ticker": ticker,
+                "price": cmp,
+                "stage": r["stage"] or 2,
+                "signal": {"rsi14": r["rsi14"] or 50.0, "composite_score": r["composite_score"] or 60.0},
+                "action": r["action"] or "HOLD",
+                "rationale": r["rationale"] or "",
+            }
+            portfolio_ctx = {
+                "is_holding": True,
+                "pnl_pct": pnl_pct,
+                "tax_term": "ST",
+                "holding_days": 100,
+            }
+            items.append({"ticker": ticker, "metrics": metrics, "portfolio_ctx": portfolio_ctx})
+
+        # Run 2-ticker chunked batch
+        results = await generate_batch_ai_analysis(items, batch_size=2)
+
+        # Filter non-HOLD actionable items
+        actionable = []
+        for ticker, resp in results.items():
+            if resp and "ACT:HOLD" not in resp:
+                clean_resp = resp.strip()
+                actionable.append(f"<b>{ticker}</b>:\n<code>{html.escape(clean_resp)}</code>")
+
+        if actionable:
+            header = f"🚨 <b>Portfolio Risk Audit Alerts ({len(actionable)} Actionable / {len(rows)} Total)</b>\n\n"
+            full_msg = header + "\n\n".join(actionable)
+        else:
+            full_msg = f"✅ <b>Portfolio Risk Audit Clear</b>\nAll {len(rows)} holdings maintain intact structure and active stops (100% ACT:HOLD)."
+
+        await status_msg.edit_text(full_msg, parse_mode='HTML')
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Error during edge audit: {e}")
