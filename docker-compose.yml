@@ -18,8 +18,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     tmpfs:
-      - /app/logs:rw,noexec,nosuid,size=64m
-      - /tmp:rw,noexec,nosuid,size=128m
+      - /app/logs:rw,noexec,nosuid,size=64m,uid=1000,gid=1000,mode=0775
+      - /tmp:rw,noexec,nosuid,size=128m,uid=1000,gid=1000,mode=1777
     volumes:
       - ./data:/app/data
     healthcheck:
