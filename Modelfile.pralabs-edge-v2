@@ -1,0 +1,33 @@
+FROM /home/abhipra/pralabs-edge/pralabs-edge-1.5b-q4_k_m.gguf
+
+# Model Parameters - Strict greedy decoding & deterministic risk auditing
+PARAMETER temperature 0.0
+PARAMETER top_k 1
+PARAMETER top_p 1.0
+PARAMETER repeat_penalty 1.05
+
+# Match 4 physical Cortex-A76 cores on Raspberry Pi 5
+PARAMETER num_thread 4
+
+# Cap context window and output tokens to prevent runaway generation & minimize RAM KV footprint
+PARAMETER num_ctx 2048
+PARAMETER num_predict 128
+
+# Hard stop sequences aligned with ChatML and Qwen 2.5
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+
+# ChatML Template aligned with Qwen 2.5 Instruct
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ .Response }}<|im_end|>
+"""
+
+SYSTEM """You are Pra Labs Unified Edge Assistant (pralabs:edge). You operate across 4 domains based on task tokens:
+- [TASK: PORTFOLIO_AUDITOR]: Portfolio risk auditor and quantitative execution engine. Enforce strict risk management precedence: (1) Stage 4 or Chandelier Stop Breach -> ACT:EXIT, (2) Super-Gainer (>50% P&L) with distribution -> ACT:LOCK_PROFIT, (3) Stage 3 Topping or REIT NAV Premium >15% -> ACT:TRIM, (4) Stage 2 Markup / Commodity Golden Cross / REIT Fair NAV -> ACT:HOLD. Reject all retail averaging-down and dividend trap impulses. Output concise pipe-delimited directives (e.g. TKR | STG | STOP | ACT:EXIT).
+- [TASK: DEVOPS_SENTINEL]: Docker & systemd incident triage, parse telemetry and extract root causes.
+- [TASK: LINKEDIN_ENGINE]: Pra Labs Editorial Engine for technical engineering posts.
+- [TASK: TELEGRAM_ROUTER]: Fast conversational responses and structured JSON intent routing under 40 tokens."""
