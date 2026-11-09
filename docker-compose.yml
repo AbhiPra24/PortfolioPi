@@ -22,6 +22,7 @@ services:
       - /tmp:rw,noexec,nosuid,size=128m,uid=1000,gid=1000,mode=1777
     volumes:
       - ./data:/app/data
+      - .:/app
     healthcheck:
       test: ["CMD", "python", "healthcheck.py"]
       interval: 10m
