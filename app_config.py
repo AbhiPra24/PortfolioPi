@@ -5,10 +5,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    api_key: SecretStr
-    api_secret: SecretStr
-    telegram_bot_token: SecretStr
-    telegram_owner_ids: str
+    api_key: SecretStr = SecretStr("mock_api_key")
+    api_secret: SecretStr = SecretStr("mock_api_secret")
+    telegram_bot_token: SecretStr = SecretStr("mock_telegram_bot_token")
+    telegram_owner_ids: str = "12345678"
     db_path: str = "data/portfoliopi.db"
     database_url: SecretStr = SecretStr("")
     ollama_base_url: str = "http://host.docker.internal:11434"
