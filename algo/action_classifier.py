@@ -5,7 +5,7 @@ import pandas as pd
 
 from algo.distribution_days import count_distribution_days
 from algo.relative_strength import compute_relative_strength
-from algo.sip_allocator import calculate_sip_multiplier
+from algo.sip_allocator import calculate_sip_multiplier, check_liquidity_health
 from algo.stage_analysis import classify_stage
 from algo.tax_lots import LTCG_ANNUAL_EXEMPTION_LIMIT, evaluate_tax_hurdle_rule
 from algo.trailing_stop import calculate_chandelier_exit
@@ -22,6 +22,8 @@ def get_stock_action(
     tax_lots: Optional[List[Dict[str, Any]]] = None,
     realized_stcl_available: bool = False,
     remaining_ltcg_exemption: float = LTCG_ANNUAL_EXEMPTION_LIMIT,
+    avg_daily_turnover_1m: Optional[float] = None,
+    price_to_nav_spread_pct: Optional[float] = None,
 ) -> dict:
     if len(stock_df) < 200 or len(nifty_df) < 200:
         return {
@@ -50,13 +52,27 @@ def get_stock_action(
     stop_loss = chandelier_res["stop_loss"]
     k_t = chandelier_res["k_t"]
 
-    # Calculate SIP multiplier
+    # Calculate SIP multiplier with liquidity health gating
     sip_mult = calculate_sip_multiplier(
         stock_df,
         stage=stage,
         rs_score=rs_score,
         dist_days=dist_days,
+        ticker=stock_code,
+        avg_daily_turnover_1m=avg_daily_turnover_1m,
+        price_to_nav_spread_pct=price_to_nav_spread_pct,
+        asset_class=asset_class,
     )
+
+    liquidity_ok = True
+    liquidity_rationale = ""
+    if avg_daily_turnover_1m is not None or price_to_nav_spread_pct is not None:
+        liquidity_ok, liquidity_rationale = check_liquidity_health(
+            ticker=stock_code,
+            avg_daily_turnover_1m=avg_daily_turnover_1m if avg_daily_turnover_1m is not None else float("inf"),
+            price_to_nav_spread_pct=price_to_nav_spread_pct if price_to_nav_spread_pct is not None else 0.0,
+            asset_class=asset_class,
+        )
 
     current_close = stock_df.iloc[-1]["close"]
 
@@ -77,15 +93,23 @@ def get_stock_action(
             if stage == 3:
                 rationale.append("Stock is in Stage 3 topping.")
         elif stage == 2 and tt_score >= 6 and rs_score > 0:
-            action = "BUY MORE / CONTINUE SIP"
-            rationale.append(f"Strong Stage 2 uptrend with RS {rs_score:.2f} and {tt_score}/7 trend criteria.")
+            if not liquidity_ok:
+                action = "HOLD / PAUSE SIP"
+                rationale.append(f"Liquidity/Spread guardrail failed: {liquidity_rationale}.")
+            else:
+                action = "BUY MORE / CONTINUE SIP"
+                rationale.append(f"Strong Stage 2 uptrend with RS {rs_score:.2f} and {tt_score}/7 trend criteria.")
         else:
             action = "HOLD"
             rationale.append("Holding steady.")
     else:
         if stage == 2 and tt_score >= 6 and rs_score > 0:
-            action = "BUY MORE / CONTINUE SIP"
-            rationale.append(f"Strong Stage 2 uptrend with RS {rs_score:.2f} and {tt_score}/7 trend criteria. Consider buying.")
+            if not liquidity_ok:
+                action = "HOLD / PAUSE SIP"
+                rationale.append(f"Liquidity/Spread guardrail failed: {liquidity_rationale}.")
+            else:
+                action = "BUY MORE / CONTINUE SIP"
+                rationale.append(f"Strong Stage 2 uptrend with RS {rs_score:.2f} and {tt_score}/7 trend criteria. Consider buying.")
         else:
             action = "HOLD"
             rationale.append("Not a buy setup right now.")

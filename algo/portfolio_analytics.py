@@ -123,6 +123,8 @@ def compute_risk_metrics(
         "max_drawdown": round(max_dd * 100, 2),  # in %
         "var_95": round(abs(var_95) * 100, 2),  # in %
         "cvar_95": round(abs(cvar_95) * 100, 2),  # in %
+        "treynor_ratio": round((cagr - risk_free_rate) / beta, 2) if beta != 0 else 0.0,
+        "jensens_alpha": round(alpha * 100, 2),
         "beta": round(beta, 2),
         "alpha": round(alpha * 100, 2),  # in %
     }

@@ -244,6 +244,48 @@ async def init_db():
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_history_trade_id ON trades_history(trade_id);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_history_order_id ON orders_history(order_id);")
 
+        # Sahamati Account Aggregator expansion tables
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS external_holdings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_fiu TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                fi_type TEXT NOT NULL,
+                asset_class TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                isin TEXT,
+                name TEXT,
+                quantity REAL NOT NULL,
+                average_price REAL NOT NULL,
+                current_price REAL NOT NULL,
+                current_value REAL NOT NULL,
+                cost_value REAL NOT NULL,
+                unrealized_pnl REAL NOT NULL,
+                folio_number TEXT,
+                pran TEXT,
+                dp_id TEXT,
+                last_nav_date TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_fiu, account_id, symbol)
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS aa_consents (
+                consent_id TEXT PRIMARY KEY,
+                consent_handle TEXT UNIQUE,
+                customer_id TEXT NOT NULL,
+                fi_types TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                redirect_url TEXT,
+                account_aggregator_id TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ext_holdings_pk ON external_holdings(source_fiu, account_id, symbol);")
+
         # Create/refresh tax_lots_view: FIFO lot matching from trades_history
         await db.execute("""
             CREATE VIEW IF NOT EXISTS tax_lots_view AS

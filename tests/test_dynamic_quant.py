@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from algo.action_classifier import get_stock_action
-from algo.sip_allocator import calculate_sip_multiplier, normalize_sip_budget
+from algo.sip_allocator import calculate_sip_multiplier, check_liquidity_health, normalize_sip_budget
 from algo.trailing_stop import calculate_chandelier_exit
 
 
@@ -261,3 +261,176 @@ def test_action_classifier_attaches_dynamic_fields():
     assert "stop_loss" in res
     assert 2.0 <= res["k_t"] <= 4.2
     assert 0.0 <= res["sip_multiplier"] <= 2.0
+
+
+# ---------------------------------------------------------------------------
+# 5. Liquidity & Bid-Ask / NAV Spread Guardrail Tests
+# ---------------------------------------------------------------------------
+
+def test_check_liquidity_health_reit_invit():
+    """Verify REIT/InvIT liquidity requirements: ADTV >= ₹15L and |Price-NAV|/NAV <= 8%."""
+    # Healthy case: Turnover ₹20L, Spread 3%
+    ok, msg = check_liquidity_health("EMBASSY", avg_daily_turnover_1m=20_00_000, price_to_nav_spread_pct=3.0, asset_class="REIT_INVIT")
+    assert ok is True
+    assert "Healthy" in msg
+
+    # Boundary case: Turnover ₹15L exactly, Spread 8% exactly
+    ok_boundary, _ = check_liquidity_health("POWERGRID_INVIT", avg_daily_turnover_1m=15_00_000, price_to_nav_spread_pct=8.0, asset_class="INVIT")
+    assert ok_boundary is True
+
+    # Negative case: Illiquid turnover (e.g. ₹10L < ₹15L)
+    ok_low_vol, msg_low_vol = check_liquidity_health("ILLIQUID_REIT", avg_daily_turnover_1m=10_00_000, price_to_nav_spread_pct=2.0, asset_class="REIT")
+    assert ok_low_vol is False
+    assert "below ₹15L threshold" in msg_low_vol
+
+    # Negative case: Excessive NAV premium (e.g. 10% > 8%)
+    ok_prem, msg_prem = check_liquidity_health("OVERPRICED_INVIT", avg_daily_turnover_1m=25_00_000, price_to_nav_spread_pct=10.0, asset_class="REIT_INVIT")
+    assert ok_prem is False
+    assert "breaches 8.0% guardrail" in msg_prem
+
+    # Negative case: Extreme discount indicating distress (e.g. -12% spread -> abs(spread)=12% > 8%)
+    ok_disc, msg_disc = check_liquidity_health("DISTRESSED_REIT", avg_daily_turnover_1m=25_00_000, price_to_nav_spread_pct=-12.0, asset_class="REIT")
+    assert ok_disc is False
+    assert "breaches 8.0% guardrail" in msg_disc
+
+
+def test_check_liquidity_health_debt_etf():
+    """Verify Debt ETF liquidity requirements: ADTV >= ₹25L and spread <= 0.5%."""
+    # Healthy case: Turnover ₹30L, spread 0.2%
+    ok, _ = check_liquidity_health("LIQUIDBEES", avg_daily_turnover_1m=30_00_000, price_to_nav_spread_pct=0.2, asset_class="DEBT_ETF")
+    assert ok is True
+
+    # Negative case: Turnover ₹20L < ₹25L
+    ok_low_vol, msg_low_vol = check_liquidity_health("DEBT_ETF_A", avg_daily_turnover_1m=20_00_000, price_to_nav_spread_pct=0.1, asset_class="DEBT_ETF")
+    assert ok_low_vol is False
+    assert "below ₹25L threshold" in msg_low_vol
+
+    # Negative case: Spread 0.8% > 0.5%
+    ok_spread, msg_spread = check_liquidity_health("DEBT_ETF_B", avg_daily_turnover_1m=50_00_000, price_to_nav_spread_pct=0.8, asset_class="DEBT_ETF")
+    assert ok_spread is False
+    assert "breaches 0.5% guardrail" in msg_spread
+
+
+def test_check_liquidity_health_equity():
+    """Verify Equity (small/midcaps) requires ADTV >= ₹50L to prevent slippage."""
+    # Healthy case: ₹60L turnover
+    ok, _ = check_liquidity_health("MIDCAP_STOCK", avg_daily_turnover_1m=60_00_000, price_to_nav_spread_pct=0.0, asset_class="EQUITY")
+    assert ok is True
+
+    # Illiquid case: ₹35L turnover (< ₹50L)
+    ok_illiquid, msg_illiquid = check_liquidity_health("MICROCAP_STOCK", avg_daily_turnover_1m=35_00_000, price_to_nav_spread_pct=0.0, asset_class="EQUITY")
+    assert ok_illiquid is False
+    assert "below ₹50L threshold" in msg_illiquid
+
+
+def test_sip_multiplier_gated_by_liquidity():
+    """Verify calculate_sip_multiplier gates multiplier to 0.0 when liquidity health fails."""
+    # Normal stage 2 without liquidity failure -> multiplier > 0.5
+    m_normal = calculate_sip_multiplier(
+        df=None,
+        stage=2,
+        rs_score=80.0,
+        dist_days=0,
+        current_price=101.0,
+        sma50=100.0,
+        atr22=2.0,
+        ticker="HEALTHY_REIT",
+        avg_daily_turnover_1m=20_00_000,
+        price_to_nav_spread_pct=2.0,
+        asset_class="REIT_INVIT",
+    )
+    assert m_normal > 1.0
+
+    # Illiquid InvIT -> throttled to 0.0
+    m_illiquid = calculate_sip_multiplier(
+        df=None,
+        stage=2,
+        rs_score=80.0,
+        dist_days=0,
+        current_price=101.0,
+        sma50=100.0,
+        atr22=2.0,
+        ticker="ILLIQUID_REIT",
+        avg_daily_turnover_1m=5_00_000,  # 5 Lakhs < 15 Lakhs
+        price_to_nav_spread_pct=2.0,
+        asset_class="REIT_INVIT",
+    )
+    assert m_illiquid == 0.0
+
+    # Stretched NAV premium -> throttled to 0.0
+    m_stretched = calculate_sip_multiplier(
+        df=None,
+        stage=2,
+        rs_score=80.0,
+        dist_days=0,
+        current_price=101.0,
+        sma50=100.0,
+        atr22=2.0,
+        ticker="PREMIUM_REIT",
+        avg_daily_turnover_1m=20_00_000,
+        price_to_nav_spread_pct=11.5,  # 11.5% > 8%
+        asset_class="REIT_INVIT",
+    )
+    assert m_stretched == 0.0
+
+    # Detailed return check
+    details = calculate_sip_multiplier(
+        df=None,
+        stage=2,
+        rs_score=80.0,
+        ticker="PREMIUM_REIT",
+        avg_daily_turnover_1m=20_00_000,
+        price_to_nav_spread_pct=11.5,
+        asset_class="REIT_INVIT",
+        return_details=True,
+    )
+    assert details["multiplier"] == 0.0
+    assert details["liquidity_ok"] is False
+    assert "breaches 8.0% guardrail" in details["rationale"]
+
+
+def test_action_classifier_downgrades_on_liquidity_failure():
+    """Verify get_stock_action downgrades recommendation from BUY MORE to HOLD / PAUSE SIP on liquidity failure."""
+    stock_df = create_mock_ohlcv(220, trend=0.8, spread=2.0)
+    nifty_df = create_mock_ohlcv(220, trend=0.4, spread=1.5)
+
+    # 1. Healthy Stage 2 REIT -> BUY MORE / CONTINUE SIP
+    res_healthy = get_stock_action(
+        stock_code="EMBASSY_REIT",
+        stock_df=stock_df,
+        nifty_df=nifty_df,
+        is_holding=True,
+        asset_class="REIT_INVIT",
+        avg_daily_turnover_1m=25_00_000,
+        price_to_nav_spread_pct=2.0,
+    )
+    assert res_healthy["action"] == "BUY MORE / CONTINUE SIP"
+    assert res_healthy["sip_multiplier"] > 0.0
+
+    # 2. Stretched NAV premium -> Downgraded to HOLD / PAUSE SIP and multiplier 0.0
+    res_stretched = get_stock_action(
+        stock_code="EXPENSIVE_REIT",
+        stock_df=stock_df,
+        nifty_df=nifty_df,
+        is_holding=True,
+        asset_class="REIT_INVIT",
+        avg_daily_turnover_1m=25_00_000,
+        price_to_nav_spread_pct=12.0,  # > 8%
+    )
+    assert res_stretched["action"] == "HOLD / PAUSE SIP"
+    assert res_stretched["sip_multiplier"] == 0.0
+    assert "Liquidity/Spread guardrail failed" in res_stretched["rationale"]
+
+    # 3. Illiquid turnover InvIT -> Downgraded to HOLD / PAUSE SIP
+    res_illiquid = get_stock_action(
+        stock_code="ILLIQUID_INVIT",
+        stock_df=stock_df,
+        nifty_df=nifty_df,
+        is_holding=False,
+        asset_class="REIT_INVIT",
+        avg_daily_turnover_1m=8_00_000,  # < ₹15L
+        price_to_nav_spread_pct=3.0,
+    )
+    assert res_illiquid["action"] == "HOLD / PAUSE SIP"
+    assert res_illiquid["sip_multiplier"] == 0.0
+    assert "Liquidity/Spread guardrail failed" in res_illiquid["rationale"]
