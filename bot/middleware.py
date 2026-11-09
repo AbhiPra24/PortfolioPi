@@ -16,4 +16,5 @@ def owner_only(func):
             await update.message.reply_text("Unauthorized access.")
             return
         return await func(update, context, *args, **kwargs)
+
     return wrapper

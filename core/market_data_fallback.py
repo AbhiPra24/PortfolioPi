@@ -21,11 +21,11 @@ Operational Guardrails:
      so prices align with broker execution records and stop triggers.
 """
 
-from datetime import date, datetime, timedelta
 import logging
-import os
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
 import pandas as pd
 
 logger = logging.getLogger("market_data_fallback")
@@ -40,11 +40,10 @@ TICKER_MAP: Dict[str, Tuple[str, str]] = {
     # Core mappings requested explicitly
     "FEDBAN": ("FEDERALBNK", "FEDERALBNK.NS"),
     "MANAFI": ("MANAPPURAM", "MANAPPURAM.NS"),
-    "POWINF": ("PGINVIT", "PGINVIT.BO"),       # InvITs trade reliably on BSE via yfinance
-    "INDGRI": ("INDIGRID", "INDIGRID.BO"),   # InvITs trade reliably on BSE via yfinance
+    "POWINF": ("PGINVIT", "PGINVIT.BO"),  # InvITs trade reliably on BSE via yfinance
+    "INDGRI": ("INDIGRID", "INDIGRID.BO"),  # InvITs trade reliably on BSE via yfinance
     "NIPSIL": ("SILVERBEES", "SILVERBEES.NS"),
     "GOLDBEES": ("GOLDBEES", "GOLDBEES.NS"),
-
     # Other common portfolio tickers
     "CANBAN": ("CANBK", "CANBK.NS"),
     "BANBAR": ("BANKBARODA", "BANKBARODA.NS"),
@@ -164,53 +163,51 @@ def normalize_to_breeze(symbol: str) -> str:
 # Official NSE Trading Holidays (Equity Segment)
 KNOWN_NSE_HOLIDAYS = {
     # 2024
-    date(2024, 1, 22),   # Special Holiday
-    date(2024, 1, 26),   # Republic Day
-    date(2024, 3, 8),    # Mahashivratri
-    date(2024, 3, 25),   # Holi
-    date(2024, 3, 29),   # Good Friday
-    date(2024, 4, 11),   # Id-Ul-Fitr
-    date(2024, 4, 17),   # Shri Ram Navmi
-    date(2024, 5, 1),    # Maharashtra Day
-    date(2024, 5, 20),   # General Parliamentary Elections
-    date(2024, 6, 17),   # Bakri Id
-    date(2024, 7, 17),   # Moharram
-    date(2024, 8, 15),   # Independence Day
-    date(2024, 10, 2),   # Mahatma Gandhi Jayanti
-    date(2024, 11, 1),   # Diwali Laxmi Pujan (Day holiday, evening Muhurat)
+    date(2024, 1, 22),  # Special Holiday
+    date(2024, 1, 26),  # Republic Day
+    date(2024, 3, 8),  # Mahashivratri
+    date(2024, 3, 25),  # Holi
+    date(2024, 3, 29),  # Good Friday
+    date(2024, 4, 11),  # Id-Ul-Fitr
+    date(2024, 4, 17),  # Shri Ram Navmi
+    date(2024, 5, 1),  # Maharashtra Day
+    date(2024, 5, 20),  # General Parliamentary Elections
+    date(2024, 6, 17),  # Bakri Id
+    date(2024, 7, 17),  # Moharram
+    date(2024, 8, 15),  # Independence Day
+    date(2024, 10, 2),  # Mahatma Gandhi Jayanti
+    date(2024, 11, 1),  # Diwali Laxmi Pujan (Day holiday, evening Muhurat)
     date(2024, 11, 15),  # Gurunanak Jayanti
     date(2024, 11, 20),  # Maharashtra Assembly Elections
     date(2024, 12, 25),  # Christmas
-
     # 2025
-    date(2025, 2, 26),   # Mahashivratri
-    date(2025, 3, 14),   # Holi
-    date(2025, 3, 31),   # Id-Ul-Fitr
-    date(2025, 4, 10),   # Shri Mahavir Jayanti
-    date(2025, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
-    date(2025, 4, 18),   # Good Friday
-    date(2025, 5, 1),    # Maharashtra Day
-    date(2025, 8, 15),   # Independence Day
-    date(2025, 8, 27),   # Ganesh Chaturthi
-    date(2025, 10, 2),   # Mahatma Gandhi Jayanti / Dussehra
+    date(2025, 2, 26),  # Mahashivratri
+    date(2025, 3, 14),  # Holi
+    date(2025, 3, 31),  # Id-Ul-Fitr
+    date(2025, 4, 10),  # Shri Mahavir Jayanti
+    date(2025, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
+    date(2025, 4, 18),  # Good Friday
+    date(2025, 5, 1),  # Maharashtra Day
+    date(2025, 8, 15),  # Independence Day
+    date(2025, 8, 27),  # Ganesh Chaturthi
+    date(2025, 10, 2),  # Mahatma Gandhi Jayanti / Dussehra
     date(2025, 10, 21),  # Diwali Laxmi Pujan
     date(2025, 10, 22),  # Diwali-Balipratipada
-    date(2025, 11, 5),   # Prakash Gurpurb Sri Guru Nanak Dev
+    date(2025, 11, 5),  # Prakash Gurpurb Sri Guru Nanak Dev
     date(2025, 12, 25),  # Christmas
-
     # 2026
-    date(2026, 1, 15),   # Municipal Corporation Election
-    date(2026, 1, 26),   # Republic Day
-    date(2026, 3, 3),    # Holi
-    date(2026, 3, 26),   # Shri Ram Navami
-    date(2026, 3, 31),   # Shri Mahavir Jayanti
-    date(2026, 4, 3),    # Good Friday
-    date(2026, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
-    date(2026, 5, 1),    # Maharashtra Day
-    date(2026, 5, 28),   # Bakri Id
-    date(2026, 6, 26),   # Muharram
-    date(2026, 9, 14),   # Ganesh Chaturthi
-    date(2026, 10, 2),   # Mahatma Gandhi Jayanti
+    date(2026, 1, 15),  # Municipal Corporation Election
+    date(2026, 1, 26),  # Republic Day
+    date(2026, 3, 3),  # Holi
+    date(2026, 3, 26),  # Shri Ram Navami
+    date(2026, 3, 31),  # Shri Mahavir Jayanti
+    date(2026, 4, 3),  # Good Friday
+    date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
+    date(2026, 5, 1),  # Maharashtra Day
+    date(2026, 5, 28),  # Bakri Id
+    date(2026, 6, 26),  # Muharram
+    date(2026, 9, 14),  # Ganesh Chaturthi
+    date(2026, 10, 2),  # Mahatma Gandhi Jayanti
     date(2026, 10, 20),  # Dussehra
     date(2026, 11, 10),  # Diwali-Balipratipada
     date(2026, 11, 24),  # Prakash Gurpurb Sri Guru Nanak Dev
@@ -457,6 +454,7 @@ class MarketDataFallback:
         # 3. nsepython (Live Exchange Scrape)
         try:
             from nsepython import nse_quote_ltp
+
             ltp = nse_quote_ltp(nse_symbol)
             if ltp and float(ltp) > 0:
                 return float(ltp), "NSEPYTHON"
@@ -519,6 +517,7 @@ class MarketDataFallback:
         Uses get_last_trading_date to skip weekends and official holidays.
         """
         from jugaad_data.nse import bhavcopy_save
+
         cur = get_last_trading_date()
         for _ in range(days_back):
             cur = get_last_trading_date(cur)
@@ -553,12 +552,15 @@ class MarketDataFallback:
 
 if __name__ == "__main__":
     import time
+
     md = MarketDataFallback()
     test_symbols = ["FEDBAN", "MANAFI", "POWINF", "INDGRI", "NIPSIL", "GOLDBEES", "INFY"]
 
     print("\n--- 1. Testing Normalization ---")
     for s in test_symbols:
-        print(f"{s:<10} -> NSE: {normalize_to_nse(s):<12} | YF: {normalize_to_yfinance(s):<15} | Breeze: {normalize_to_breeze(s)}")
+        print(
+            f"{s:<10} -> NSE: {normalize_to_nse(s):<12} | YF: {normalize_to_yfinance(s):<15} | Breeze: {normalize_to_breeze(s)}"
+        )
 
     print("\n--- 2. Testing Last Trading Date ---")
     print(f"Last trading date: {get_last_trading_date()}")

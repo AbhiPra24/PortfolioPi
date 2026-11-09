@@ -2,13 +2,13 @@
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from app_config import settings
 from bot.handlers import (
     extract_session_token,
     session_message_handler,
-    handle_session_token_submission,
 )
 from core.database import init_db
 from core.session_store import get_session
@@ -57,6 +57,7 @@ class DummyContext:
 # 1. Regex and Token Extraction Tests
 # ============================================================================
 
+
 def test_extract_session_token_redirect_url():
     url = "https://127.0.0.1/?apisession=42893847"
     assert extract_session_token(url) == "42893847"
@@ -89,6 +90,7 @@ def test_extract_session_token_invalid():
 # 2. Session Token Submission & Validation Tests
 # ============================================================================
 
+
 @pytest.mark.anyio
 async def test_handle_valid_token_submission(temp_db, monkeypatch):
     await init_db()
@@ -107,9 +109,10 @@ async def test_handle_valid_token_submission(temp_db, monkeypatch):
     update = DummyUpdate(text=f"https://127.0.0.1/?apisession={token}", user_id=owner_id)
     context = DummyContext()
 
-    with patch("bot.handlers.BreezeClient") as MockBreezeClient, \
-         patch("core.data_refresh.run_breeze_sync", new_callable=AsyncMock) as mock_sync:
-
+    with (
+        patch("bot.handlers.BreezeClient") as MockBreezeClient,
+        patch("core.data_refresh.run_breeze_sync", new_callable=AsyncMock) as mock_sync,
+    ):
         mock_instance = MagicMock()
         mock_instance.get_customer_details.return_value = mock_customer_details
         MockBreezeClient.return_value = mock_instance
@@ -147,13 +150,12 @@ async def test_handle_invalid_token_submission(temp_db, monkeypatch):
     update = DummyUpdate(text=invalid_token, user_id=owner_id)
     context = DummyContext()
 
-    with patch("bot.handlers.BreezeClient") as MockBreezeClient, \
-         patch("core.data_refresh.run_breeze_sync", new_callable=AsyncMock) as mock_sync:
-
+    with (
+        patch("bot.handlers.BreezeClient") as MockBreezeClient,
+        patch("core.data_refresh.run_breeze_sync", new_callable=AsyncMock) as mock_sync,
+    ):
         mock_instance = MagicMock()
-        mock_instance.get_customer_details.return_value = {
-            "Error": "Session Token is invalid or expired"
-        }
+        mock_instance.get_customer_details.return_value = {"Error": "Session Token is invalid or expired"}
         MockBreezeClient.return_value = mock_instance
 
         await session_message_handler(update, context)

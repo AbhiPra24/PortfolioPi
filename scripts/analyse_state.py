@@ -11,13 +11,11 @@ import json
 import os
 import sqlite3
 import sys
-import urllib.request
 import urllib.error
-from datetime import datetime
+import urllib.request
 
 try:
     from scripts.ollama_common import (
-        query_llm_with_fallback,
         resolve_fallback_endpoint,
         resolve_fallback_model,
         resolve_ollama_endpoint,
@@ -26,7 +24,6 @@ try:
     )
 except ImportError:
     from ollama_common import (
-        query_llm_with_fallback,
         resolve_fallback_endpoint,
         resolve_fallback_model,
         resolve_ollama_endpoint,
@@ -35,13 +32,12 @@ except ImportError:
     )
 
 
-
 def get_default_db_path() -> str:
     candidates = [
         os.getenv("SQLITE_DB_PATH"),
         os.getenv("DB_PATH"),
         "data/portfoliopi.db",
-        "backups/portfoliopi_local.db"
+        "backups/portfoliopi_local.db",
     ]
     for p in candidates:
         if p and os.path.exists(p):
@@ -77,7 +73,7 @@ def fetch_portfolio_state(db_path: str) -> dict:
             "total_invested": round(total_inv, 2),
             "total_current_value": round(total_cur, 2),
             "total_pnl": round(total_pnl, 2),
-            "pnl_pct": round(pnl_pct, 2)
+            "pnl_pct": round(pnl_pct, 2),
         }
     else:
         state["portfolio_summary"] = {}
@@ -118,29 +114,29 @@ def fetch_portfolio_state(db_path: str) -> dict:
         if stg not in stage_breakdown:
             stg = "Unknown"
         stage_breakdown[stg] += 1
-        stage_value[stg] += (r["cur_val"] or 0.0)
+        stage_value[stg] += r["cur_val"] or 0.0
 
         pnl_pct = ((r["cur_price"] - r["avg_price"]) / r["avg_price"] * 100) if r["avg_price"] > 0 else 0.0
         alloc_pct = (r["cur_val"] / total_val * 100) if total_val > 0 else 0.0
 
-        holdings.append({
-            "ticker": r["stock_code"],
-            "qty": r["qty"],
-            "avg_price": round(r["avg_price"], 2),
-            "cur_price": round(r["cur_price"], 2),
-            "cur_val": round(r["cur_val"], 2),
-            "pnl": round(r["pnl"], 2),
-            "pnl_pct": round(pnl_pct, 2),
-            "allocation_pct": round(alloc_pct, 2),
-            "stage": stg,
-            "slope": round(float(r["slope"]), 4) if r["slope"] is not None else None
-        })
+        holdings.append(
+            {
+                "ticker": r["stock_code"],
+                "qty": r["qty"],
+                "avg_price": round(r["avg_price"], 2),
+                "cur_price": round(r["cur_price"], 2),
+                "cur_val": round(r["cur_val"], 2),
+                "pnl": round(r["pnl"], 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "allocation_pct": round(alloc_pct, 2),
+                "stage": stg,
+                "slope": round(float(r["slope"]), 4) if r["slope"] is not None else None,
+            }
+        )
 
     state["holdings_count"] = len(holdings)
     state["stage_distribution_count"] = stage_breakdown
-    state["stage_distribution_value_pct"] = {
-        k: round(v / total_val * 100, 2) for k, v in stage_value.items()
-    }
+    state["stage_distribution_value_pct"] = {k: round(v / total_val * 100, 2) for k, v in stage_value.items()}
     state["top_5_allocations"] = holdings[:5]
     state["top_5_gainers"] = sorted(holdings, key=lambda x: x["pnl"], reverse=True)[:5]
     state["top_5_laggards"] = sorted(holdings, key=lambda x: x["pnl"])[:5]
@@ -163,10 +159,10 @@ def fetch_portfolio_state(db_path: str) -> dict:
                 "ticker": r["ticker"],
                 "type": r["asset_type"],
                 "annual_est": round(float(r["est_annual_cashflow"] or 0), 2),
-                "yield_on_cost_pct": round(float(r["yield_on_cost"] or 0) * 100, 2)
+                "yield_on_cost_pct": round(float(r["yield_on_cost"] or 0) * 100, 2),
             }
             for r in div_rows[:5]
-        ]
+        ],
     }
 
     # 4. SIP Book Health
@@ -185,10 +181,10 @@ def fetch_portfolio_state(db_path: str) -> dict:
                 "category": r["asset_category"],
                 "monthly_sip": round(float(r["monthly_sip"] or 0), 2),
                 "quant_stage": r["quant_stage"],
-                "target_action": r["target_action"]
+                "target_action": r["target_action"],
             }
             for r in sip_rows
-        ]
+        ],
     }
 
     conn.close()
@@ -197,20 +193,10 @@ def fetch_portfolio_state(db_path: str) -> dict:
 
 def query_ollama(prompt: str, ollama_url: str = "http://localhost:11434", model: str = "qwen2.5:7b") -> None:
     endpoint = f"{ollama_url.rstrip('/')}/api/generate"
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": True,
-        "options": {
-            "temperature": 0.2,
-            "top_p": 0.9
-        }
-    }
+    payload = {"model": model, "prompt": prompt, "stream": True, "options": {"temperature": 0.2, "top_p": 0.9}}
 
     req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
+        endpoint, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
     )
 
     try:
@@ -237,7 +223,6 @@ def main():
     parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     parser.add_argument("--dry-run", action="store_true", help="Dump extracted metrics JSON without calling Ollama")
     args = parser.parse_args()
-
 
     print(f"[*] Reading portfolio state from: {args.db}")
     state = fetch_portfolio_state(args.db)
@@ -277,16 +262,19 @@ Provide an executive, actionable analysis with the following structured sections
    - Bulleted list of prioritized, defensive or offensive portfolio actions (Take Profits, Stop Losses, SIP Pause/Boost).
 """
 
-    print(f"[*] Prompting Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n" + "=" * 60 + "\n")
+    print(
+        f"[*] Prompting Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n"
+        + "=" * 60
+        + "\n"
+    )
     stream_ollama(
         prompt,
         base_url=args.ollama_url,
         model=args.model,
         fallback_url=args.fallback_url,
-        fallback_model=args.fallback_model
+        fallback_model=args.fallback_model,
     )
     print("\n" + "=" * 60)
-
 
 
 if __name__ == "__main__":

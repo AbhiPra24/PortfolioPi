@@ -22,8 +22,24 @@ from algo.tax_pairing import (
     pair_tax_loss_harvest,
     plan_section_112a_harvest_reset,
 )
-LTCG_RATE = 0.125   # 12.5% LTCG on equity
-STCG_RATE = 0.20    # 20.0% STCG on equity
+
+__all__ = [
+    "HarvestPairingItem",
+    "HarvestPairingResult",
+    "Section112AHarvestItem",
+    "Section112AHarvestResult",
+    "pair_tax_loss_harvest",
+    "plan_section_112a_harvest_reset",
+    "compute_fifo_tax_lots",
+    "compute_tax_conversion_hurdle",
+    "evaluate_tax_hurdle_rule",
+    "LTCG_RATE",
+    "STCG_RATE",
+    "LTCG_ANNUAL_EXEMPTION_LIMIT",
+]
+
+LTCG_RATE = 0.125  # 12.5% LTCG on equity
+STCG_RATE = 0.20  # 20.0% STCG on equity
 LTCG_ANNUAL_EXEMPTION_LIMIT = 125000.0  # ₹1.25 Lakh annual exemption under Section 112A
 
 
@@ -108,17 +124,21 @@ def compute_fifo_tax_lots(
         if price <= 0:
             price = (raw_cost / qty) if (raw_cost > 0 and qty > 0) else 0.0
 
-        trade_date = _parse_date(t.get("trade_date") or t.get("execution_date") or t.get("order_datetime")) or as_of_date
+        trade_date = (
+            _parse_date(t.get("trade_date") or t.get("execution_date") or t.get("order_datetime")) or as_of_date
+        )
         trade_id = str(t.get("trade_id") or t.get("order_id") or f"lot_{len(stock_lots.get(stock_code, [])) + 1}")
 
         if action == "Buy":
-            stock_lots.setdefault(stock_code, []).append({
-                "lot_id": trade_id,
-                "stock_code": stock_code,
-                "buy_date": trade_date,
-                "quantity": qty,
-                "buy_price": price,
-            })
+            stock_lots.setdefault(stock_code, []).append(
+                {
+                    "lot_id": trade_id,
+                    "stock_code": stock_code,
+                    "buy_date": trade_date,
+                    "quantity": qty,
+                    "buy_price": price,
+                }
+            )
         elif action == "Sell":
             # Match FIFO against existing buy lots
             sell_rem = qty
@@ -172,22 +192,24 @@ def compute_fifo_tax_lots(
             unique_lot_id = lot["lot_id"] if lot["lot_id"] != "None" else f"{stock_code}_LOT_{lot_counter}"
             lot_counter += 1
 
-            result_lots.append({
-                "lot_id": unique_lot_id,
-                "stock_code": stock_code,
-                "buy_date": b_date.strftime("%Y-%m-%d"),
-                "quantity": rem_qty,
-                "buy_price": round(buy_price, 2),
-                "current_price": round(cmp, 2),
-                "holding_days": holding_days,
-                "tax_category": tax_category,
-                "days_to_ltcg": days_to_ltcg,
-                "unrealized_gain_per_share": round(gain_per_share, 2),
-                "price_cushion_required": price_cushion_required,
-                "total_cost": round(total_cost, 2),
-                "current_value": round(current_val, 2),
-                "unrealized_gain": round(unrealized_gain, 2),
-            })
+            result_lots.append(
+                {
+                    "lot_id": unique_lot_id,
+                    "stock_code": stock_code,
+                    "buy_date": b_date.strftime("%Y-%m-%d"),
+                    "quantity": rem_qty,
+                    "buy_price": round(buy_price, 2),
+                    "current_price": round(cmp, 2),
+                    "holding_days": holding_days,
+                    "tax_category": tax_category,
+                    "days_to_ltcg": days_to_ltcg,
+                    "unrealized_gain_per_share": round(gain_per_share, 2),
+                    "price_cushion_required": price_cushion_required,
+                    "total_cost": round(total_cost, 2),
+                    "current_value": round(current_val, 2),
+                    "unrealized_gain": round(unrealized_gain, 2),
+                }
+            )
 
     return result_lots
 
@@ -257,7 +279,7 @@ def evaluate_tax_hurdle_rule(
 
     # Rule 5: Fiscal year-end March 15-31 audit check
     # Indian tax year ends March 31.
-    is_fy_end_window = (as_of_date.month == 3 and 15 <= as_of_date.day <= 31)
+    is_fy_end_window = as_of_date.month == 3 and 15 <= as_of_date.day <= 31
     if is_fy_end_window and tax_cat == "LTCG" and unrealized_gain > 0 and remaining_ltcg_exemption >= 10000.0:
         return {
             "tax_action": "GAIN_HARVEST_RESET",

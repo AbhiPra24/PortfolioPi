@@ -1,6 +1,5 @@
 """Unit tests for Chandelier Exit dynamic scaling, SIP quant multipliers, and budget normalization."""
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -9,7 +8,9 @@ from algo.sip_allocator import calculate_sip_multiplier, check_liquidity_health,
 from algo.trailing_stop import calculate_chandelier_exit
 
 
-def create_mock_ohlcv(n_bars: int = 150, start_price: float = 100.0, trend: float = 0.5, spread: float = 2.0) -> pd.DataFrame:
+def create_mock_ohlcv(
+    n_bars: int = 150, start_price: float = 100.0, trend: float = 0.5, spread: float = 2.0
+) -> pd.DataFrame:
     """Generate deterministic synthetic OHLCV data for testing."""
     dates = pd.date_range(start="2024-01-01", periods=n_bars, freq="D").strftime("%Y-%m-%d").tolist()
     closes = []
@@ -23,28 +24,31 @@ def create_mock_ohlcv(n_bars: int = 150, start_price: float = 100.0, trend: floa
         price += trend + (0.5 if i % 2 == 0 else -0.4)
         c = round(price, 2)
         h = round(c + spread, 2)
-        l = round(c - spread, 2)
+        low_val = round(c - spread, 2)
         o = round(c - 0.2, 2)
         v = 100000 + (i * 500)
         closes.append(c)
         highs.append(h)
-        lows.append(l)
+        lows.append(low_val)
         opens.append(o)
         volumes.append(v)
 
-    return pd.DataFrame({
-        "date": dates,
-        "open": opens,
-        "high": highs,
-        "low": lows,
-        "close": closes,
-        "volume": volumes,
-    })
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": volumes,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # 1. Chandelier Exit Dynamic Scaling Tests
 # ---------------------------------------------------------------------------
+
 
 def test_chandelier_exit_backward_compatibility():
     """Verify calculate_chandelier_exit without new params returns a scalar float stop_loss."""
@@ -136,6 +140,7 @@ def test_chandelier_exit_fallback_short_history():
 # 2. SIP Quant Multiplier Tests
 # ---------------------------------------------------------------------------
 
+
 def test_sip_multiplier_stage_gating():
     """Verify S_stage: Stage 2 -> 1.0; Stage 1 -> 0.5; Stage 3/4 -> 0.0."""
     df = create_mock_ohlcv(60)
@@ -199,9 +204,15 @@ def test_sip_multiplier_distribution_day_penalty():
 
 def test_sip_multiplier_relative_strength_scaling():
     """Verify higher RS increases multiplier, while low/zero RS reduces it."""
-    m_high_rs = calculate_sip_multiplier(df=None, stage=2, rs_score=100.0, dist_days=0, current_price=102.0, sma50=100.0, atr22=2.0)
-    m_low_rs = calculate_sip_multiplier(df=None, stage=2, rs_score=40.0, dist_days=0, current_price=102.0, sma50=100.0, atr22=2.0)
-    m_zero_rs = calculate_sip_multiplier(df=None, stage=2, rs_score=0.0, dist_days=0, current_price=102.0, sma50=100.0, atr22=2.0)
+    m_high_rs = calculate_sip_multiplier(
+        df=None, stage=2, rs_score=100.0, dist_days=0, current_price=102.0, sma50=100.0, atr22=2.0
+    )
+    m_low_rs = calculate_sip_multiplier(
+        df=None, stage=2, rs_score=40.0, dist_days=0, current_price=102.0, sma50=100.0, atr22=2.0
+    )
+    m_zero_rs = calculate_sip_multiplier(
+        df=None, stage=2, rs_score=0.0, dist_days=0, current_price=102.0, sma50=100.0, atr22=2.0
+    )
 
     assert m_high_rs > m_low_rs > m_zero_rs
     assert pytest.approx(m_zero_rs, 0.01) == 0.5  # clipped to min 0.5
@@ -210,6 +221,7 @@ def test_sip_multiplier_relative_strength_scaling():
 # ---------------------------------------------------------------------------
 # 3. Budget Normalization Tests
 # ---------------------------------------------------------------------------
+
 
 def test_normalize_sip_budget_proportional_distribution():
     """Verify total budget is distributed according to base allocations and multipliers."""
@@ -249,6 +261,7 @@ def test_normalize_sip_budget_zero_or_negative_budget():
 # 4. Action Classifier Integration Tests
 # ---------------------------------------------------------------------------
 
+
 def test_action_classifier_attaches_dynamic_fields():
     """Verify get_stock_action attaches k_t and sip_multiplier."""
     stock_df = create_mock_ohlcv(220, trend=0.8, spread=2.0)
@@ -267,29 +280,40 @@ def test_action_classifier_attaches_dynamic_fields():
 # 5. Liquidity & Bid-Ask / NAV Spread Guardrail Tests
 # ---------------------------------------------------------------------------
 
+
 def test_check_liquidity_health_reit_invit():
     """Verify REIT/InvIT liquidity requirements: ADTV >= ₹15L and |Price-NAV|/NAV <= 8%."""
     # Healthy case: Turnover ₹20L, Spread 3%
-    ok, msg = check_liquidity_health("EMBASSY", avg_daily_turnover_1m=20_00_000, price_to_nav_spread_pct=3.0, asset_class="REIT_INVIT")
+    ok, msg = check_liquidity_health(
+        "EMBASSY", avg_daily_turnover_1m=20_00_000, price_to_nav_spread_pct=3.0, asset_class="REIT_INVIT"
+    )
     assert ok is True
     assert "Healthy" in msg
 
     # Boundary case: Turnover ₹15L exactly, Spread 8% exactly
-    ok_boundary, _ = check_liquidity_health("POWERGRID_INVIT", avg_daily_turnover_1m=15_00_000, price_to_nav_spread_pct=8.0, asset_class="INVIT")
+    ok_boundary, _ = check_liquidity_health(
+        "POWERGRID_INVIT", avg_daily_turnover_1m=15_00_000, price_to_nav_spread_pct=8.0, asset_class="INVIT"
+    )
     assert ok_boundary is True
 
     # Negative case: Illiquid turnover (e.g. ₹10L < ₹15L)
-    ok_low_vol, msg_low_vol = check_liquidity_health("ILLIQUID_REIT", avg_daily_turnover_1m=10_00_000, price_to_nav_spread_pct=2.0, asset_class="REIT")
+    ok_low_vol, msg_low_vol = check_liquidity_health(
+        "ILLIQUID_REIT", avg_daily_turnover_1m=10_00_000, price_to_nav_spread_pct=2.0, asset_class="REIT"
+    )
     assert ok_low_vol is False
     assert "below ₹15L threshold" in msg_low_vol
 
     # Negative case: Excessive NAV premium (e.g. 10% > 8%)
-    ok_prem, msg_prem = check_liquidity_health("OVERPRICED_INVIT", avg_daily_turnover_1m=25_00_000, price_to_nav_spread_pct=10.0, asset_class="REIT_INVIT")
+    ok_prem, msg_prem = check_liquidity_health(
+        "OVERPRICED_INVIT", avg_daily_turnover_1m=25_00_000, price_to_nav_spread_pct=10.0, asset_class="REIT_INVIT"
+    )
     assert ok_prem is False
     assert "breaches 8.0% guardrail" in msg_prem
 
     # Negative case: Extreme discount indicating distress (e.g. -12% spread -> abs(spread)=12% > 8%)
-    ok_disc, msg_disc = check_liquidity_health("DISTRESSED_REIT", avg_daily_turnover_1m=25_00_000, price_to_nav_spread_pct=-12.0, asset_class="REIT")
+    ok_disc, msg_disc = check_liquidity_health(
+        "DISTRESSED_REIT", avg_daily_turnover_1m=25_00_000, price_to_nav_spread_pct=-12.0, asset_class="REIT"
+    )
     assert ok_disc is False
     assert "breaches 8.0% guardrail" in msg_disc
 
@@ -297,16 +321,22 @@ def test_check_liquidity_health_reit_invit():
 def test_check_liquidity_health_debt_etf():
     """Verify Debt ETF liquidity requirements: ADTV >= ₹25L and spread <= 0.5%."""
     # Healthy case: Turnover ₹30L, spread 0.2%
-    ok, _ = check_liquidity_health("LIQUIDBEES", avg_daily_turnover_1m=30_00_000, price_to_nav_spread_pct=0.2, asset_class="DEBT_ETF")
+    ok, _ = check_liquidity_health(
+        "LIQUIDBEES", avg_daily_turnover_1m=30_00_000, price_to_nav_spread_pct=0.2, asset_class="DEBT_ETF"
+    )
     assert ok is True
 
     # Negative case: Turnover ₹20L < ₹25L
-    ok_low_vol, msg_low_vol = check_liquidity_health("DEBT_ETF_A", avg_daily_turnover_1m=20_00_000, price_to_nav_spread_pct=0.1, asset_class="DEBT_ETF")
+    ok_low_vol, msg_low_vol = check_liquidity_health(
+        "DEBT_ETF_A", avg_daily_turnover_1m=20_00_000, price_to_nav_spread_pct=0.1, asset_class="DEBT_ETF"
+    )
     assert ok_low_vol is False
     assert "below ₹25L threshold" in msg_low_vol
 
     # Negative case: Spread 0.8% > 0.5%
-    ok_spread, msg_spread = check_liquidity_health("DEBT_ETF_B", avg_daily_turnover_1m=50_00_000, price_to_nav_spread_pct=0.8, asset_class="DEBT_ETF")
+    ok_spread, msg_spread = check_liquidity_health(
+        "DEBT_ETF_B", avg_daily_turnover_1m=50_00_000, price_to_nav_spread_pct=0.8, asset_class="DEBT_ETF"
+    )
     assert ok_spread is False
     assert "breaches 0.5% guardrail" in msg_spread
 
@@ -314,11 +344,15 @@ def test_check_liquidity_health_debt_etf():
 def test_check_liquidity_health_equity():
     """Verify Equity (small/midcaps) requires ADTV >= ₹50L to prevent slippage."""
     # Healthy case: ₹60L turnover
-    ok, _ = check_liquidity_health("MIDCAP_STOCK", avg_daily_turnover_1m=60_00_000, price_to_nav_spread_pct=0.0, asset_class="EQUITY")
+    ok, _ = check_liquidity_health(
+        "MIDCAP_STOCK", avg_daily_turnover_1m=60_00_000, price_to_nav_spread_pct=0.0, asset_class="EQUITY"
+    )
     assert ok is True
 
     # Illiquid case: ₹35L turnover (< ₹50L)
-    ok_illiquid, msg_illiquid = check_liquidity_health("MICROCAP_STOCK", avg_daily_turnover_1m=35_00_000, price_to_nav_spread_pct=0.0, asset_class="EQUITY")
+    ok_illiquid, msg_illiquid = check_liquidity_health(
+        "MICROCAP_STOCK", avg_daily_turnover_1m=35_00_000, price_to_nav_spread_pct=0.0, asset_class="EQUITY"
+    )
     assert ok_illiquid is False
     assert "below ₹50L threshold" in msg_illiquid
 

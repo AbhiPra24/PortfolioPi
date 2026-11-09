@@ -1,12 +1,10 @@
 """Unit and integration tests for GBNF grammar formatting, micro-batched dispatch, and prompt compression."""
 
-import pytest
-from pathlib import Path
 from algo.ai_analyst import (
-    load_gbnf_grammar,
-    format_telemetry_line,
-    audit_holdings,
     GRAMMAR_FILE,
+    audit_holdings,
+    format_telemetry_line,
+    load_gbnf_grammar,
 )
 
 
@@ -40,6 +38,7 @@ def test_format_telemetry_line():
 def test_audit_holdings_fallback_deterministic(monkeypatch):
     # Test fallback path when Ollama raises an error or is unreachable
     import algo.ai_analyst as analyst_mod
+
     monkeypatch.setattr(analyst_mod, "query_edge_analyst", lambda *args, **kwargs: None)
 
     holdings = [

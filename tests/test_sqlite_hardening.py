@@ -1,16 +1,13 @@
 """Unit tests verifying SQLite hardening PRAGMA settings."""
 
 import os
-import sqlite3
 import tempfile
+
 import pytest
 
 from core.database import (
-    configure_connection,
-    configure_sqlite3_connection,
     get_db_connection,
     get_sync_db_connection,
-    init_db,
 )
 
 
@@ -38,7 +35,9 @@ async def test_async_sqlite_hardening_pragmas():
             async with db.execute("PRAGMA busy_timeout;") as cursor:
                 row = await cursor.fetchone()
                 busy_timeout = row[0] if row else None
-                assert busy_timeout is not None and busy_timeout >= 5000, f"Expected busy_timeout >= 5000, got {busy_timeout}"
+                assert busy_timeout is not None and busy_timeout >= 5000, (
+                    f"Expected busy_timeout >= 5000, got {busy_timeout}"
+                )
 
             # Check temp_store (MEMORY is 2, DEFAULT is 0, FILE is 1)
             async with db.execute("PRAGMA temp_store;") as cursor:

@@ -11,9 +11,10 @@ Also integrates database persistence for `portfolio_risk_metrics` and provides
 full backward compatibility with `algo.portfolio_analytics`.
 """
 
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Union
+
 import aiosqlite
 import numpy as np
 import pandas as pd
@@ -48,7 +49,7 @@ def compute_downside_deviation(
         return 0.0
 
     underperformance = np.minimum(0.0, clean_rets.to_numpy() - target_return)
-    semivariance = np.sum(underperformance ** 2) / n
+    semivariance = np.sum(underperformance**2) / n
     return float(np.sqrt(semivariance))
 
 
@@ -162,7 +163,7 @@ def compute_rolling_max_drawdown(
 
     peak = clean_series.cummax()
     # Guard against division by zero if peak <= 0
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         drawdown = np.where(peak > 0, (clean_series - peak) / peak, 0.0)
     min_dd = float(np.nanmin(drawdown))
     return min_dd if min_dd <= 0.0 else 0.0
@@ -223,7 +224,7 @@ async def update_portfolio_risk_metrics(
         mean_daily = float(clean_rets.mean())
         cagr = float((1.0 + mean_daily) ** periods_per_year - 1.0)
         daily_vol = float(clean_rets.std())
-        annualized_vol = float(daily_vol * np.sqrt(periods_per_year))
+        float(daily_vol * np.sqrt(periods_per_year))
 
         rf_daily = (1.0 + risk_free_rate) ** (1.0 / periods_per_year) - 1.0
         excess_rets = clean_rets - rf_daily
@@ -265,7 +266,8 @@ async def update_portfolio_risk_metrics(
         max_dd_pct = round(max_dd * 100, 2)
         downside_dev_val = round(downside_dev, 6)
 
-        await db.execute("""
+        await db.execute(
+            """
             INSERT INTO portfolio_risk_metrics (
                 calculated_at,
                 cagr_pct,
@@ -280,20 +282,22 @@ async def update_portfolio_risk_metrics(
                 max_drawdown_pct,
                 downside_deviation
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            now_str,
-            cagr_pct,
-            bench_cagr_pct,
-            beta_val,
-            jensens_alpha_val,
-            jensens_alpha_pct,
-            sharpe_val,
-            sortino_val,
-            treynor_val,
-            max_dd_val,
-            max_dd_pct,
-            downside_dev_val,
-        ))
+        """,
+            (
+                now_str,
+                cagr_pct,
+                bench_cagr_pct,
+                beta_val,
+                jensens_alpha_val,
+                jensens_alpha_pct,
+                sharpe_val,
+                sortino_val,
+                treynor_val,
+                max_dd_val,
+                max_dd_pct,
+                downside_dev_val,
+            ),
+        )
         await db.commit()
 
         metrics_record = {

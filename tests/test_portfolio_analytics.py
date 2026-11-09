@@ -1,29 +1,29 @@
-import math
 import unittest
+
 import aiosqlite
 import numpy as np
 import pandas as pd
 import pytest
 
 from algo.portfolio_analytics import (
+    check_guardrails,
     compute_beta,
     compute_concentration,
     compute_drawdown_series,
     compute_risk_metrics,
     optimize_portfolio_weights,
-    check_guardrails,
     rollup_stage_health,
 )
+from app_config import settings
 from core.database import init_db
 from core.portfolio_analytics import (
     compute_downside_deviation,
-    compute_sortino_ratio,
-    compute_treynor_ratio,
     compute_jensens_alpha,
     compute_rolling_max_drawdown,
+    compute_sortino_ratio,
+    compute_treynor_ratio,
     update_portfolio_risk_metrics,
 )
-from app_config import settings
 
 
 class TestPortfolioAnalytics(unittest.TestCase):
@@ -31,7 +31,7 @@ class TestPortfolioAnalytics(unittest.TestCase):
         # 5 holdings
         data = {
             "Stock Code": ["RELIANCE", "TCS", "INFY", "HDFC", "ITC"],
-            "Current Value": [50000.0, 30000.0, 10000.0, 6000.0, 4000.0]
+            "Current Value": [50000.0, 30000.0, 10000.0, 6000.0, 4000.0],
         }
         df = pd.DataFrame(data)
 
@@ -50,7 +50,7 @@ class TestPortfolioAnalytics(unittest.TestCase):
         # Create a stock that changes exactly as the index (beta should be close to 1)
         np.random.seed(42)
         index_closes = pd.Series([100.0 * (1.0 + 0.01 * x) for x in range(100)])
-        stock_closes = index_closes * 1.5 # monotonic scaled, returns will be identical
+        stock_closes = index_closes * 1.5  # monotonic scaled, returns will be identical
 
         beta = compute_beta(stock_closes, index_closes, window=90)
         self.assertAlmostEqual(beta, 1.0, places=4)
@@ -86,17 +86,20 @@ class TestPortfolioAnalytics(unittest.TestCase):
         prices = pd.Series([100, 105, 110, 99, 105, 120])
         dd = compute_drawdown_series(prices)
         self.assertEqual(dd.iloc[2], 0.0)  # at peak 110
-        self.assertAlmostEqual(dd.iloc[3], -10.0, places=1) # 99 is 10% below 110
+        self.assertAlmostEqual(dd.iloc[3], -10.0, places=1)  # 99 is 10% below 110
         self.assertEqual(dd.iloc[5], 0.0)  # new peak 120
 
     def test_optimize_portfolio_weights(self):
         dates = pd.date_range("2025-01-01", periods=100)
         np.random.seed(42)
-        df_prices = pd.DataFrame({
-            "STOCK_A": 100 * np.exp(np.cumsum(np.random.normal(0.001, 0.01, 100))),
-            "STOCK_B": 100 * np.exp(np.cumsum(np.random.normal(0.0005, 0.02, 100))),
-            "STOCK_C": 100 * np.exp(np.cumsum(np.random.normal(0.0002, 0.008, 100))),
-        }, index=dates)
+        df_prices = pd.DataFrame(
+            {
+                "STOCK_A": 100 * np.exp(np.cumsum(np.random.normal(0.001, 0.01, 100))),
+                "STOCK_B": 100 * np.exp(np.cumsum(np.random.normal(0.0005, 0.02, 100))),
+                "STOCK_C": 100 * np.exp(np.cumsum(np.random.normal(0.0002, 0.008, 100))),
+            },
+            index=dates,
+        )
 
         w_sharpe = optimize_portfolio_weights(df_prices, objective="max_sharpe")
         self.assertAlmostEqual(sum(w_sharpe.values()), 100.0, delta=1.0)
@@ -108,10 +111,9 @@ class TestPortfolioAnalytics(unittest.TestCase):
         self.assertAlmostEqual(sum(w_inv_vol.values()), 100.0, delta=1.0)
 
     def test_check_guardrails(self):
-        holdings = pd.DataFrame({
-            "Stock Code": ["HEAVY_STOCK", "NORMAL_STOCK", "TINY_STOCK"],
-            "Current Value": [85000.0, 10000.0, 5000.0]
-        })
+        holdings = pd.DataFrame(
+            {"Stock Code": ["HEAVY_STOCK", "NORMAL_STOCK", "TINY_STOCK"], "Current Value": [85000.0, 10000.0, 5000.0]}
+        )
         alerts = check_guardrails(holdings, max_position_cap_pct=15.0, min_holdings_count=5)
         rules = [a["rule"] for a in alerts]
         self.assertIn("MAX_CONCENTRATION_BREACH", rules)
@@ -131,7 +133,7 @@ class TestPortfolioAnalytics(unittest.TestCase):
         # min(0, -0.01 - t) = -0.01 - t
         # min(0, 0.02 - t) = 0
         diff = np.minimum(0.0, returns.to_numpy() - target)
-        expected = float(np.sqrt(np.mean(diff ** 2)))
+        expected = float(np.sqrt(np.mean(diff**2)))
         actual = compute_downside_deviation(returns, target_return=target)
         self.assertAlmostEqual(actual, expected, places=7)
 
@@ -230,18 +232,24 @@ async def test_update_portfolio_risk_metrics_pipeline(tmp_path, monkeypatch):
         dates = pd.date_range("2026-01-01", periods=30, freq="D")
         for i, dt in enumerate(dates):
             val = base_val * (1.0 + 0.005 * i - 0.01 * (i % 3))
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT INTO portfolio_value_history (timestamp, total_invested, total_current_value, total_pnl)
                 VALUES (?, ?, ?, ?)
-            """, (dt.isoformat(), 100000.0, val, val - 100000.0))
+            """,
+                (dt.isoformat(), 100000.0, val, val - 100000.0),
+            )
 
         # Populate mock NIFTY benchmark
         for i, dt in enumerate(dates):
             close = 20000.0 * (1.0 + 0.003 * i)
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT INTO ohlcv_cache (stock_code, date, open, high, low, close, volume)
                 VALUES ('_NIFTY50', ?, 20000, 20100, 19900, ?, 1000000)
-            """, (dt.strftime("%Y-%m-%d"), close))
+            """,
+                (dt.strftime("%Y-%m-%d"), close),
+            )
         await db.commit()
 
         # Run pipeline

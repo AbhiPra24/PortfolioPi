@@ -11,10 +11,10 @@ Features:
 import json
 import logging
 import os
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import urllib.error
 import urllib.request
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def load_gbnf_grammar() -> Optional[str]:
 
 def format_telemetry_line(h: Dict[str, Any]) -> str:
     """Pre-computes deltas so the 1.5B edge CPU never executes division.
-    
+
     Format:
         TKR|STG:stage|MIN:minervini|RS:rs|STOP:stop_margin%|PNL:pnl%|DIST:dist_days|ASSET:asset_class
     """
@@ -43,20 +43,20 @@ def format_telemetry_line(h: Dict[str, Any]) -> str:
     stage = h.get("stage", 2)
     cmp = float(h.get("cmp", h.get("price", h.get("current_price", 100.0))))
     stop = float(h.get("stop_loss_price", h.get("stop_loss", cmp * 0.95)))
-    
+
     if stop > 0:
         stop_margin = round(((cmp - stop) / stop) * 100, 1)
     else:
         stop_margin = 0.0
     sign = "+" if stop_margin >= 0 else ""
-    
+
     pnl = float(h.get("unrealized_pnl_pct", h.get("pnl_pct", 0.0)))
     pnl_sign = "+" if pnl >= 0 else ""
-    
+
     minervini = h.get("minervini", h.get("tt_score", "7/7"))
     if isinstance(minervini, int):
         minervini = f"{minervini}/7"
-    
+
     rs = h.get("rs", h.get("rs_score", 80))
     dist = h.get("dist_days", 0)
     asset = h.get("asset_class", "EQ")
@@ -66,7 +66,7 @@ def format_telemetry_line(h: Dict[str, Any]) -> str:
         asset = "COMMODITY"
     elif asset == "REIT_INVIT":
         asset = "REIT"
-    
+
     return (
         f"{ticker}|STG:{stage}|MIN:{minervini}|"
         f"RS:{rs}|STOP:{sign}{stop_margin}%|PNL:{pnl_sign}{pnl:.1f}%|"
@@ -77,7 +77,7 @@ def format_telemetry_line(h: Dict[str, Any]) -> str:
 def query_edge_analyst(prompt: str, grammar: Optional[str] = None, timeout: float = 20.0) -> Optional[str]:
     """Execute raw Ollama request with optional GBNF grammar constraints."""
     grammar_text = grammar if grammar is not None else load_gbnf_grammar()
-    
+
     options: Dict[str, Any] = {
         "temperature": 0.0,
         "num_predict": 100,
@@ -158,7 +158,11 @@ def audit_holdings(holdings: List[Dict[str, Any]], chunk_size: int = 2) -> List[
                 else:
                     act = "HOLD"
 
-                status_str = f"BREACH ({round((cmp-stop)/stop*100, 1)}%)" if breached else f"PASS (+{round((cmp-stop)/stop*100, 1)}%)"
+                status_str = (
+                    f"BREACH ({round((cmp - stop) / stop * 100, 1)}%)"
+                    if breached
+                    else f"PASS (+{round((cmp - stop) / stop * 100, 1)}%)"
+                )
                 results.append(f"{ticker} | STG:{stg} | STOP:{status_str} | ACT:{act}")
                 results.append(f"• Rule-based deterministic assessment (P&L: {pnl:+.1f}%).")
 

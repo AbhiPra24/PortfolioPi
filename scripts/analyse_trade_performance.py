@@ -12,21 +12,23 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # Ensure repository root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import aiosqlite
-from app_config import settings
+import aiosqlite  # noqa: E402
+
+from app_config import settings  # noqa: E402
 
 try:
     from tabulate import tabulate
+
     HAS_TABULATE = True
 except ImportError:
     HAS_TABULATE = False
@@ -61,12 +63,12 @@ def calculate_trade_metrics(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     for t in trades:
         action = str(t.get("action") or t.get("order_action") or "").strip().title()
         qty = int(t.get("quantity") or t.get("qty") or t.get("match_qty") or 0)
-        
+
         # Turn-over cost calculation:
         # In Breeze, average_cost is often total trade value (qty * price) or average fill cost
         raw_cost = float(t.get("average_cost") or 0.0)
         price = float(t.get("price") or t.get("trade_price") or t.get("ltp") or 0.0)
-        
+
         if raw_cost > 0 and raw_cost >= price * max(qty, 1) * 0.9:
             trade_value = raw_cost
         elif price > 0 and qty > 0:
@@ -119,7 +121,7 @@ def calculate_trade_metrics(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         buys = list(stock_buys.get(stock, []))
         if not buys:
             continue
-        
+
         buy_idx = 0
         cur_buy = dict(buys[buy_idx]) if buy_idx < len(buys) else None
 
@@ -223,18 +225,20 @@ async def get_trades_from_db(db_path: str, limit: int = 50) -> List[Dict[str, An
             (limit,),
         ) as cur:
             async for row in cur:
-                trades.append({
-                    "stock_code": row["stock_code"],
-                    "action": row["action"],
-                    "quantity": row["quantity"],
-                    "average_cost": row["average_cost"],
-                    "ltp": row["ltp"],
-                    "brokerage_amount": row["brokerage_amount"] or 0.0,
-                    "total_taxes": row["total_taxes"] or 0.0,
-                    "trade_date": row["trade_date"],
-                    "trade_id": row["trade_id"],
-                    "order_id": row["order_id"],
-                })
+                trades.append(
+                    {
+                        "stock_code": row["stock_code"],
+                        "action": row["action"],
+                        "quantity": row["quantity"],
+                        "average_cost": row["average_cost"],
+                        "ltp": row["ltp"],
+                        "brokerage_amount": row["brokerage_amount"] or 0.0,
+                        "total_taxes": row["total_taxes"] or 0.0,
+                        "trade_date": row["trade_date"],
+                        "trade_id": row["trade_id"],
+                        "order_id": row["order_id"],
+                    }
+                )
     return trades
 
 
@@ -247,7 +251,9 @@ async def fetch_portfolio_context(db_path: str) -> Dict[str, Any]:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         try:
-            async with db.execute("SELECT stock_code, quantity, average_price, current_price, asset_class FROM holdings_snapshot") as cur:
+            async with db.execute(
+                "SELECT stock_code, quantity, average_price, current_price, asset_class FROM holdings_snapshot"
+            ) as cur:
                 async for row in cur:
                     holdings[row["stock_code"].upper()] = {
                         "quantity": row["quantity"],
@@ -303,7 +309,7 @@ async def run_trade_performance_analysis(days: int = 30, use_breeze: bool = True
 
     if use_breeze:
         try:
-            from core.breeze_client import BreezeClient, SessionExpiredError
+            from core.breeze_client import BreezeClient
             from core.session_store import get_session
 
             token = await get_session()
@@ -338,7 +344,9 @@ async def run_trade_performance_analysis(days: int = 30, use_breeze: bool = True
     print(f"Total Frictions:     ₹{metrics['total_frictions']:,.2f}")
     print(f"Transaction Drag:    {metrics['drag_pct']:.3f}%")
     print(f"Average Trade Size:  ₹{metrics['avg_trade_size']:,.2f}")
-    print(f"Buys: {metrics['buy_count']} (₹{metrics['buy_turnover']:,.2f}) | Sells: {metrics['sell_count']} (₹{metrics['sell_turnover']:,.2f})")
+    print(
+        f"Buys: {metrics['buy_count']} (₹{metrics['buy_turnover']:,.2f}) | Sells: {metrics['sell_count']} (₹{metrics['sell_turnover']:,.2f})"
+    )
     if metrics["closed_trades_count"] > 0:
         print(f"Roundtrips Closed:   {metrics['closed_trades_count']} | Win Rate: {metrics['win_rate_pct']:.1f}%")
         print(f"Realized Gross P&L:  ₹{metrics['realized_gross_pnl']:,.2f}")
@@ -366,16 +374,18 @@ async def run_trade_performance_analysis(days: int = 30, use_breeze: bool = True
         sig = signals.get(code, {})
         algo_action = sig.get("action", "-")
 
-        rows.append([
-            t_date,
-            code,
-            act,
-            qty,
-            f"₹{val:,.1f}",
-            f"₹{brok:.2f}",
-            curr_qty,
-            algo_action,
-        ])
+        rows.append(
+            [
+                t_date,
+                code,
+                act,
+                qty,
+                f"₹{val:,.1f}",
+                f"₹{brok:.2f}",
+                curr_qty,
+                algo_action,
+            ]
+        )
 
     print("\n📋 EXECUTED TRADES VS PORTFOLIO & SIGNAL STATE:")
     headers = ["Date", "Symbol", "Side", "Qty", "Turnover", "Brok", "Held Qty", "Algo Action"]
@@ -383,13 +393,16 @@ async def run_trade_performance_analysis(days: int = 30, use_breeze: bool = True
         print(tabulate(rows, headers=headers, tablefmt="fancy_grid"))
     else:
         for r in rows:
-            print(f"  {r[0]} | {r[1]:<8} | {r[2]:<4} | Qty: {r[3]:<4} | Turn: {r[4]:<10} | Held: {r[6]} | Action: {r[7]}")
+            print(
+                f"  {r[0]} | {r[1]:<8} | {r[2]:<4} | Qty: {r[3]:<4} | Turn: {r[4]:<10} | Held: {r[6]} | Action: {r[7]}"
+            )
 
     # 3. Display Active FIFO Tax Lots & Tax-Hurdle Evaluation
     active_tax_lots = context.get("tax_lots", [])
     if not active_tax_lots and trades:
         # Fallback to computing FIFO tax lots dynamically from trade history
         from algo.tax_lots import compute_fifo_tax_lots
+
         curr_prices = {k: v["current_price"] for k, v in holdings.items() if v.get("current_price")}
         active_tax_lots = compute_fifo_tax_lots(trades, current_prices=curr_prices)
 
@@ -399,24 +412,39 @@ async def run_trade_performance_analysis(days: int = 30, use_breeze: bool = True
         print("=" * 70)
         lot_rows = []
         for lot in active_tax_lots:
-            lot_rows.append([
-                str(lot.get("lot_id", "-"))[:12],
-                lot.get("stock_code", "-"),
-                str(lot.get("buy_date", "-"))[:10],
-                lot.get("quantity", 0),
-                f"₹{float(lot.get('buy_price', 0)):,.1f}",
-                lot.get("holding_days", 0),
-                lot.get("tax_category", "-"),
-                lot.get("days_to_ltcg", 0),
-                f"₹{float(lot.get('unrealized_gain_per_share', 0)):,.1f}",
-                f"{float(lot.get('price_cushion_required', 0)):.1f}%",
-            ])
-        lot_headers = ["Lot ID", "Symbol", "Buy Date", "Qty", "Buy Price", "Days Held", "Tax Cat", "Days to LTCG", "Gain/Sh", "Cushion Req"]
+            lot_rows.append(
+                [
+                    str(lot.get("lot_id", "-"))[:12],
+                    lot.get("stock_code", "-"),
+                    str(lot.get("buy_date", "-"))[:10],
+                    lot.get("quantity", 0),
+                    f"₹{float(lot.get('buy_price', 0)):,.1f}",
+                    lot.get("holding_days", 0),
+                    lot.get("tax_category", "-"),
+                    lot.get("days_to_ltcg", 0),
+                    f"₹{float(lot.get('unrealized_gain_per_share', 0)):,.1f}",
+                    f"{float(lot.get('price_cushion_required', 0)):.1f}%",
+                ]
+            )
+        lot_headers = [
+            "Lot ID",
+            "Symbol",
+            "Buy Date",
+            "Qty",
+            "Buy Price",
+            "Days Held",
+            "Tax Cat",
+            "Days to LTCG",
+            "Gain/Sh",
+            "Cushion Req",
+        ]
         if HAS_TABULATE:
             print(tabulate(lot_rows, headers=lot_headers, tablefmt="fancy_grid"))
         else:
             for r in lot_rows:
-                print(f"  {r[1]:<8} | Buy: {r[2]} | Qty: {r[3]:<4} | Price: {r[4]:<9} | {r[6]:<4} | Days to LTCG: {r[7]:<3} | Gain/Sh: {r[8]:<9} | Cushion: {r[9]}")
+                print(
+                    f"  {r[1]:<8} | Buy: {r[2]} | Qty: {r[3]:<4} | Price: {r[4]:<9} | {r[6]:<4} | Days to LTCG: {r[7]:<3} | Gain/Sh: {r[8]:<9} | Cushion: {r[9]}"
+                )
 
     print("\n" + "=" * 70)
 

@@ -1,13 +1,11 @@
-import asyncio
-import os
-import tempfile
-import pytest
-import aiosqlite
 from unittest.mock import MagicMock
 
-from core.database import init_db
-from core.data_refresh import sync_breeze_trades_and_orders
+import aiosqlite
+import pytest
+
 from app_config import settings
+from core.data_refresh import sync_breeze_trades_and_orders
+from core.database import init_db
 
 
 @pytest.fixture
@@ -36,7 +34,7 @@ async def test_sync_breeze_trades_and_orders(temp_db):
                 "brokerage_amount": "20.00",
                 "total_taxes": "3.60",
                 "product_type": "Cash",
-                "exchange_code": "NSE"
+                "exchange_code": "NSE",
             }
         ]
     }
@@ -52,7 +50,7 @@ async def test_sync_breeze_trades_and_orders(temp_db):
                 "price": "1500.50",
                 "average_price": "1500.50",
                 "status": "Executed",
-                "exchange_code": "NSE"
+                "exchange_code": "NSE",
             }
         ]
     }
@@ -64,7 +62,9 @@ async def test_sync_breeze_trades_and_orders(temp_db):
 
     # Verify rows in DB
     async with aiosqlite.connect(temp_db) as db:
-        async with db.execute("SELECT trade_id, stock_code, quantity, average_cost, brokerage_amount FROM trades_history") as cur:
+        async with db.execute(
+            "SELECT trade_id, stock_code, quantity, average_cost, brokerage_amount FROM trades_history"
+        ) as cur:
             trades = await cur.fetchall()
             assert len(trades) == 1
             assert trades[0][0] == "TRD001"
@@ -96,7 +96,7 @@ async def test_sync_breeze_trades_and_orders(temp_db):
                 "brokerage_amount": "25.00",
                 "total_taxes": "4.50",
                 "product_type": "Cash",
-                "exchange_code": "NSE"
+                "exchange_code": "NSE",
             }
         ]
     }

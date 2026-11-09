@@ -11,15 +11,16 @@ Fetches and analyzes:
 """
 
 import asyncio
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sys
 
 # Ensure repository root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     from tabulate import tabulate
+
     HAS_TABULATE = True
 except ImportError:
     HAS_TABULATE = False
@@ -54,7 +55,7 @@ async def run_breeze_analysis():
         print(f"\n👤 Account: {c.get('idirect_user_name', 'N/A')} (User ID: {c.get('idirect_userid', 'N/A')})")
         print(f"   Last Login: {c.get('idirect_lastlogin_time', 'N/A')}")
         print(f"   Trade Date (NSE): {c.get('exg_trade_date', {}).get('NSE', 'N/A')}")
-        segments = [k for k, v in c.get('segments_allowed', {}).items() if v == 'Y']
+        segments = [k for k, v in c.get("segments_allowed", {}).items() if v == "Y"]
         print(f"   Active Segments: {', '.join(segments)}")
     else:
         print(f"⚠️ Could not fetch customer details: {cust.get('Error')}")
@@ -80,7 +81,7 @@ async def run_breeze_analysis():
     to_date = now.strftime("%Y-%m-%dT06:00:00.000Z")
     trades_resp = breeze.get_trade_list(from_date=from_date, to_date=to_date, exchange_code="NSE")
 
-    print(f"\n📊 RECENT TRADES (Last 7 Days):")
+    print("\n📊 RECENT TRADES (Last 7 Days):")
     if trades_resp.get("Success"):
         trades = trades_resp["Success"]
         table_rows = []
@@ -93,7 +94,7 @@ async def run_breeze_analysis():
             action = t.get("action")
             qty = int(t.get("quantity", 0))
             cost = float(t.get("average_cost", 0))
-            ltp = float(t.get("ltp", 0))
+            float(t.get("ltp", 0))
             brok = float(t.get("brokerage_amount", 0))
             taxes = float(t.get("total_taxes", 0))
             trade_date = t.get("trade_date")
@@ -105,7 +106,13 @@ async def run_breeze_analysis():
             table_rows.append([trade_date, stock, action, qty, f"₹{cost:,.2f}", f"₹{brok:.2f}", f"₹{taxes:.2f}"])
 
         if HAS_TABULATE:
-            print(tabulate(table_rows, headers=["Date", "Stock", "Action", "Qty", "Cost/Turnover", "Brokerage", "Taxes"], tablefmt="fancy_grid"))
+            print(
+                tabulate(
+                    table_rows,
+                    headers=["Date", "Stock", "Action", "Qty", "Cost/Turnover", "Brokerage", "Taxes"],
+                    tablefmt="fancy_grid",
+                )
+            )
         else:
             for r in table_rows:
                 print(f"   {r[0]} | {r[1]:<8} | {r[2]:<4} | Qty: {r[3]:<4} | {r[4]} | Brok: {r[5]} | Taxes: {r[6]}")
@@ -119,22 +126,30 @@ async def run_breeze_analysis():
     order_from = (now - timedelta(days=5)).strftime("%Y-%m-%dT06:00:00.000Z")
     orders_resp = breeze.get_order_list(from_date=order_from, to_date=to_date, exchange_code="NSE")
 
-    print(f"\n📋 RECENT ORDERS (Last 5 Days):")
+    print("\n📋 RECENT ORDERS (Last 5 Days):")
     if orders_resp.get("Success"):
         orders = orders_resp["Success"]
         order_rows = []
         for o in orders:
-            order_rows.append([
-                o.get("order_datetime"),
-                o.get("stock_code"),
-                o.get("action"),
-                o.get("order_type"),
-                o.get("quantity"),
-                o.get("price"),
-                o.get("status")
-            ])
+            order_rows.append(
+                [
+                    o.get("order_datetime"),
+                    o.get("stock_code"),
+                    o.get("action"),
+                    o.get("order_type"),
+                    o.get("quantity"),
+                    o.get("price"),
+                    o.get("status"),
+                ]
+            )
         if HAS_TABULATE:
-            print(tabulate(order_rows, headers=["Time", "Stock", "Action", "Type", "Qty", "Price", "Status"], tablefmt="fancy_grid"))
+            print(
+                tabulate(
+                    order_rows,
+                    headers=["Time", "Stock", "Action", "Type", "Qty", "Price", "Status"],
+                    tablefmt="fancy_grid",
+                )
+            )
         else:
             for r in order_rows:
                 print(f"   {r[0]} | {r[1]} | {r[2]} | {r[3]} | Qty: {r[4]} | Price: {r[5]} | Status: {r[6]}")
@@ -143,7 +158,7 @@ async def run_breeze_analysis():
 
     # 5. GTT Orders Book
     gtt_resp = breeze.gtt_order_book(exchange_code="NFO", from_date=order_from, to_date=to_date)
-    print(f"\n🎯 GTT ORDER BOOK:")
+    print("\n🎯 GTT ORDER BOOK:")
     if gtt_resp.get("Success"):
         print(f"   Active GTTs: {gtt_resp['Success']}")
     else:

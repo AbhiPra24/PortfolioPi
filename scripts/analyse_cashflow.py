@@ -7,8 +7,6 @@ and cross-references monthly SIP obligations to provide a complete cashflow heal
 
 import argparse
 import json
-import os
-import sys
 
 from ollama_common import (
     get_db_connection,
@@ -17,9 +15,8 @@ from ollama_common import (
     resolve_fallback_model,
     resolve_ollama_endpoint,
     resolve_ollama_model,
-    stream_ollama
+    stream_ollama,
 )
-
 
 
 def extract_cashflow_data(db_path: str) -> dict:
@@ -45,15 +42,17 @@ def extract_cashflow_data(db_path: str) -> dict:
         atype = r["asset_type"] or "OTHER"
         by_asset_type[atype] = by_asset_type.get(atype, 0.0) + annual_cf
 
-        dividends.append({
-            "ticker": r["ticker"],
-            "asset_type": atype,
-            "expected_dpu": float(r["expected_dpu"] or 0),
-            "payout_frequency": r["payout_frequency"],
-            "next_expected_payout": r["next_expected_payout"],
-            "est_annual_cashflow": round(annual_cf, 2),
-            "yield_on_cost_pct": round(float(r["yield_on_cost"] or 0) * 100, 2)
-        })
+        dividends.append(
+            {
+                "ticker": r["ticker"],
+                "asset_type": atype,
+                "expected_dpu": float(r["expected_dpu"] or 0),
+                "payout_frequency": r["payout_frequency"],
+                "next_expected_payout": r["next_expected_payout"],
+                "est_annual_cashflow": round(annual_cf, 2),
+                "yield_on_cost_pct": round(float(r["yield_on_cost"] or 0) * 100, 2),
+            }
+        )
 
     # 2. SIP commitments grouped by category
     cursor.execute("""
@@ -74,14 +73,16 @@ def extract_cashflow_data(db_path: str) -> dict:
         cat = r["asset_category"] or "General"
         sip_by_category[cat] = sip_by_category.get(cat, 0.0) + amt
 
-        sips.append({
-            "ticker": r["ticker"],
-            "category": cat,
-            "monthly_sip": round(amt, 2),
-            "execution_day": r["execution_day"],
-            "quant_stage": r["quant_stage"],
-            "target_action": r["target_action"]
-        })
+        sips.append(
+            {
+                "ticker": r["ticker"],
+                "category": cat,
+                "monthly_sip": round(amt, 2),
+                "execution_day": r["execution_day"],
+                "quant_stage": r["quant_stage"],
+                "target_action": r["target_action"],
+            }
+        )
 
     # 3. Overall Portfolio Current Value for Yield Benchmarking
     cursor.execute("""
@@ -97,7 +98,9 @@ def extract_cashflow_data(db_path: str) -> dict:
 
     portfolio_yield_on_cost = (total_est_annual / total_invested * 100) if total_invested > 0 else 0.0
     portfolio_current_yield = (total_est_annual / total_cur_val * 100) if total_cur_val > 0 else 0.0
-    dividend_reinvestment_coverage = (total_est_annual / (total_monthly_sip * 12) * 100) if total_monthly_sip > 0 else 0.0
+    dividend_reinvestment_coverage = (
+        (total_est_annual / (total_monthly_sip * 12) * 100) if total_monthly_sip > 0 else 0.0
+    )
 
     return {
         "cashflow_summary": {
@@ -108,13 +111,15 @@ def extract_cashflow_data(db_path: str) -> dict:
             "net_annual_capital_addition": round((total_monthly_sip * 12) - total_est_annual, 2),
             "portfolio_yield_on_cost_pct": round(portfolio_yield_on_cost, 2),
             "portfolio_current_yield_pct": round(portfolio_current_yield, 2),
-            "dividend_sip_coverage_pct": round(dividend_reinvestment_coverage, 2)
+            "dividend_sip_coverage_pct": round(dividend_reinvestment_coverage, 2),
         },
         "dividend_by_asset_type": {k: round(v, 2) for k, v in by_asset_type.items()},
         "sip_by_category": {k: round(v, 2) for k, v in sip_by_category.items()},
         "top_dividend_contributors": dividends[:8],
         "top_sip_allocations": sips[:8],
-        "misaligned_sips": [s for s in sips if "SELL" in (s["target_action"] or "") or "STOP" in (s["target_action"] or "")]
+        "misaligned_sips": [
+            s for s in sips if "SELL" in (s["target_action"] or "") or "STOP" in (s["target_action"] or "")
+        ],
     }
 
 
@@ -127,7 +132,6 @@ def main():
     parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     parser.add_argument("--dry-run", action="store_true", help="Print extracted metrics and exit")
     args = parser.parse_args()
-
 
     data = extract_cashflow_data(args.db)
 
@@ -166,14 +170,18 @@ Generate a structured strategic review covering:
    - Immediate SIP redirects, pauses, or redeployments into higher-quality Stage 1/2 dividend compounders.
 """
 
-    print(f"[*] Analyzing cashflow & dividend schedule via Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n" + "=" * 60 + "\n")
+    print(
+        f"[*] Analyzing cashflow & dividend schedule via Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n"
+        + "=" * 60
+        + "\n"
+    )
     stream_ollama(
         prompt,
         system_prompt=system_prompt,
         base_url=args.ollama_url,
         model=args.model,
         fallback_url=args.fallback_url,
-        fallback_model=args.fallback_model
+        fallback_model=args.fallback_model,
     )
 
     print("\n" + "=" * 60)

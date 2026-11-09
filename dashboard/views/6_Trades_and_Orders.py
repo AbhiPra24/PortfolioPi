@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime, timezone
 import os
 import sys
 
@@ -9,10 +8,10 @@ import streamlit as st
 
 # Setup sys.path for top-level imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from app_config import settings
+from db import query_db
+
 from core.breeze_client import BreezeClient, SessionExpiredError
 from core.data_refresh import sync_breeze_trades_and_orders
-from db import execute_db, query_db
 
 st.header("Trades & Execution Ledger")
 st.caption("Breeze API trades, recent order book, transaction friction analytics & execution audit trail.")
@@ -43,18 +42,30 @@ with col_hdr2:
 # Function to load trade data
 def load_trades():
     rows = query_db("""
-        SELECT 
-            trade_date, stock_code, action, quantity, average_cost, ltp, 
+        SELECT
+            trade_date, stock_code, action, quantity, average_cost, ltp,
             brokerage_amount, total_taxes, product_type, order_id, exchange_code
         FROM trades_history
         ORDER BY id DESC
     """)
     if not rows:
         return pd.DataFrame()
-    df = pd.DataFrame(rows, columns=[
-        "Date", "Stock Code", "Action", "Quantity", "Turnover", "LTP",
-        "Brokerage", "Taxes", "Product", "Order ID", "Exchange"
-    ])
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "Date",
+            "Stock Code",
+            "Action",
+            "Quantity",
+            "Turnover",
+            "LTP",
+            "Brokerage",
+            "Taxes",
+            "Product",
+            "Order ID",
+            "Exchange",
+        ],
+    )
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     df["Turnover"] = pd.to_numeric(df["Turnover"], errors="coerce").fillna(0.0)
     df["LTP"] = pd.to_numeric(df["LTP"], errors="coerce").fillna(0.0)
@@ -66,18 +77,29 @@ def load_trades():
 # Function to load orders data
 def load_orders():
     rows = query_db("""
-        SELECT 
-            order_datetime, stock_code, action, order_type, quantity, price, 
+        SELECT
+            order_datetime, stock_code, action, order_type, quantity, price,
             average_price, status, order_id, exchange_code
         FROM orders_history
         ORDER BY id DESC
     """)
     if not rows:
         return pd.DataFrame()
-    df = pd.DataFrame(rows, columns=[
-        "Date/Time", "Stock Code", "Action", "Type", "Quantity", "Order Price",
-        "Avg Fill Price", "Status", "Order ID", "Exchange"
-    ])
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "Date/Time",
+            "Stock Code",
+            "Action",
+            "Type",
+            "Quantity",
+            "Order Price",
+            "Avg Fill Price",
+            "Status",
+            "Order ID",
+            "Exchange",
+        ],
+    )
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     df["Order Price"] = pd.to_numeric(df["Order Price"], errors="coerce").fillna(0.0)
     df["Avg Fill Price"] = pd.to_numeric(df["Avg Fill Price"], errors="coerce").fillna(0.0)
@@ -152,15 +174,15 @@ with tab_trades:
         st.caption(f"Showing **{len(filtered_trades)}** of **{len(df_trades)}** executions")
 
         # Format dataframe
-        styled_trades = filtered_trades.style.format({
-            "Turnover": "₹{:,.2f}",
-            "LTP": "₹{:,.2f}",
-            "Brokerage": "₹{:.2f}",
-            "Taxes": "₹{:.2f}",
-            "Quantity": "{:,}"
-        }).map(
-            lambda v: "color: #16a34a; font-weight: bold" if str(v).lower() == "buy" else ("color: #dc2626; font-weight: bold" if str(v).lower() == "sell" else ""),
-            subset=["Action"]
+        styled_trades = filtered_trades.style.format(
+            {"Turnover": "₹{:,.2f}", "LTP": "₹{:,.2f}", "Brokerage": "₹{:.2f}", "Taxes": "₹{:.2f}", "Quantity": "{:,}"}
+        ).map(
+            lambda v: (
+                "color: #16a34a; font-weight: bold"
+                if str(v).lower() == "buy"
+                else ("color: #dc2626; font-weight: bold" if str(v).lower() == "sell" else "")
+            ),
+            subset=["Action"],
         )
 
         st.dataframe(styled_trades, use_container_width=True, hide_index=True)
@@ -176,7 +198,7 @@ with tab_trades:
                 color="Action",
                 color_discrete_map={"Buy": "#16a34a", "Sell": "#dc2626"},
                 barmode="group",
-                title="Trade Turnover (₹) per Stock"
+                title="Trade Turnover (₹) per Stock",
             )
             fig.update_layout(yaxis_title="Turnover (₹)", xaxis_title="Stock Code")
             st.plotly_chart(fig, use_container_width=True)
@@ -221,16 +243,17 @@ with tab_orders:
             else:
                 return "background-color: #fef9c3; color: #854d0e; font-weight: bold; border-radius: 4px; padding: 2px 6px;"
 
-        styled_orders = filtered_orders.style.format({
-            "Order Price": "₹{:,.2f}",
-            "Avg Fill Price": "₹{:,.2f}",
-            "Quantity": "{:,}"
-        }).map(
-            lambda v: "color: #16a34a; font-weight: bold" if str(v).lower() == "buy" else ("color: #dc2626; font-weight: bold" if str(v).lower() == "sell" else ""),
-            subset=["Action"]
-        ).map(
-            style_status,
-            subset=["Status"]
+        styled_orders = (
+            filtered_orders.style.format({"Order Price": "₹{:,.2f}", "Avg Fill Price": "₹{:,.2f}", "Quantity": "{:,}"})
+            .map(
+                lambda v: (
+                    "color: #16a34a; font-weight: bold"
+                    if str(v).lower() == "buy"
+                    else ("color: #dc2626; font-weight: bold" if str(v).lower() == "sell" else "")
+                ),
+                subset=["Action"],
+            )
+            .map(style_status, subset=["Status"])
         )
 
         st.dataframe(styled_orders, use_container_width=True, hide_index=True)

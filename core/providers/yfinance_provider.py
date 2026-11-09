@@ -8,6 +8,7 @@ from .base import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
+
 class YFinanceProvider(MarketDataProvider):
     name = "yfinance"
 
@@ -18,10 +19,16 @@ class YFinanceProvider(MarketDataProvider):
             if df is None or df.empty:
                 return []
             df = df.reset_index()
-            df = df.rename(columns={
-                "Date": "date", "Open": "open", "High": "high",
-                "Low": "low", "Close": "close", "Volume": "volume",
-            })
+            df = df.rename(
+                columns={
+                    "Date": "date",
+                    "Open": "open",
+                    "High": "high",
+                    "Low": "low",
+                    "Close": "close",
+                    "Volume": "volume",
+                }
+            )
             df["date"] = df["date"].dt.strftime("%Y-%m-%d")
             return df[["date", "open", "high", "low", "close", "volume"]].to_dict("records")
         except Exception as e:

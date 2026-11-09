@@ -5,31 +5,23 @@ Benchmark qwen2.5:1.5b against PortfolioPi live databases:
 2. Cashflow audit
 3. Direct triage query
 """
-import time
+
 import json
+import time
+
 import requests
-import os
-import sys
-
-from analyse_signals import extract_signals_data
 from analyse_cashflow import extract_cashflow_data
+from analyse_signals import extract_signals_data
 
-TARGET = {
-    "name": "Raspberry Pi 5 Local CPU (qwen2.5:1.5b)",
-    "url": "http://127.0.0.1:11434",
-    "model": "qwen2.5:1.5b"
-}
+TARGET = {"name": "Raspberry Pi 5 Local CPU (qwen2.5:1.5b)", "url": "http://127.0.0.1:11434", "model": "qwen2.5:1.5b"}
+
 
 def query_model(target, prompt, system_prompt=None):
     payload = {
         "model": target["model"],
         "prompt": prompt,
         "stream": False,
-        "options": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "num_predict": 300
-        }
+        "options": {"temperature": 0.2, "top_p": 0.9, "num_predict": 300},
     }
     if system_prompt:
         payload["system"] = system_prompt
@@ -52,17 +44,15 @@ def query_model(target, prompt, system_prompt=None):
             "prompt_tokens": p_count,
             "prompt_tps": p_tps,
             "gen_tokens": eval_count,
-            "gen_tps": tps
+            "gen_tps": tps,
         }
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
 
 def run():
     db_path = "/data/Work/PortfolioPi/data/portfoliopi.db"
-    
+
     # 1. Signals Data
     sig_data = extract_signals_data(db_path)
     # Top 5 critical sells, top 3 trims to evaluate ingestion on 1.5b
@@ -101,22 +91,23 @@ User Question: Which stock requires immediate exit and why? Give a direct 3-bull
     tests = [
         {"name": "Test 1: Technical Signals Audit (analyse_signals)", "sys": sys_signals, "prompt": prompt_signals},
         {"name": "Test 2: Cashflow & SIP Audit (analyse_cashflow)", "sys": sys_cf, "prompt": prompt_cf},
-        {"name": "Test 3: Risk Triage & Exit Query (ask_portfolio)", "sys": sys_ask, "prompt": prompt_ask}
+        {"name": "Test 3: Risk Triage & Exit Query (ask_portfolio)", "sys": sys_ask, "prompt": prompt_ask},
     ]
 
     for t in tests:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"RUNNING: {t['name']}")
-        print(f"{'='*70}")
-        res = query_model(TARGET, t['prompt'], t.get('sys'))
-        if res['success']:
+        print(f"{'=' * 70}")
+        res = query_model(TARGET, t["prompt"], t.get("sys"))
+        if res["success"]:
             print(f"[*] Total Time: {res['time_s']:.2f}s")
             print(f"[*] Prompt Ingestion: {res['prompt_tokens']} tokens @ {res['prompt_tps']:.1f} tok/s")
             print(f"[*] Generation Speed: {res['gen_tokens']} tokens @ {res['gen_tps']:.1f} tok/s")
-            print(f"\n--- Model Output ---")
-            print(res['response'])
+            print("\n--- Model Output ---")
+            print(res["response"])
         else:
             print(f"[!] FAILED: {res.get('error')}")
+
 
 if __name__ == "__main__":
     run()

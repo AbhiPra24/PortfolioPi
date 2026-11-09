@@ -1,10 +1,10 @@
 """Unit tests for Dynamic Ex-Date REIT/InvIT Return of Capital (ROC) Amortization Hook."""
 
 from datetime import date, timedelta
+
 import aiosqlite
 import pytest
 
-from core.database import init_db
 from core.reit_amortization import (
     apply_roc_amortization,
     ensure_reit_tables,
@@ -75,12 +75,16 @@ async def test_roc_amortization_deduction_and_yoc(setup_test_db):
             row = await cur.fetchone()
             assert row[0] == 345.00
 
-        async with db.execute("SELECT yield_on_cost, roc_amount FROM dividend_schedule WHERE stock_code = 'EMBASSY'") as cur:
+        async with db.execute(
+            "SELECT yield_on_cost, roc_amount FROM dividend_schedule WHERE stock_code = 'EMBASSY'"
+        ) as cur:
             row = await cur.fetchone()
             assert row[0] == expected_new_yoc
             assert row[1] == 5.00
 
-        async with db.execute("SELECT old_cost, new_cost, roc_per_unit FROM roc_amortization_log WHERE stock_code = 'EMBASSY'") as cur:
+        async with db.execute(
+            "SELECT old_cost, new_cost, roc_per_unit FROM roc_amortization_log WHERE stock_code = 'EMBASSY'"
+        ) as cur:
             log_row = await cur.fetchone()
             assert log_row is not None
             assert log_row[0] == 350.00

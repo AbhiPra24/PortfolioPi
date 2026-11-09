@@ -14,6 +14,7 @@ from app_config import settings
 from core.ai_analyst import generate_ai_analysis
 from core.breeze_client import BreezeClient
 from core.session_store import get_session, save_session
+
 from .formatters import (
     format_cashflow_message,
     format_portfolio_message,
@@ -43,7 +44,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "I will help you monitor your portfolio and execute your algorithms.\n"
         "Use /help to see all available commands."
     )
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
@@ -55,22 +56,22 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     holdings = [dict(row) for row in rows]
     msg = format_portfolio_message(holdings)
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with aiosqlite.connect(settings.db_path) as db:
         async with db.execute("""
-            SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score 
-            FROM signals 
+            SELECT stock_code, rsi14, macd_line, macd_signal, sma50, sma200, pct_from_52w_high, volume_ratio_20d, composite_score
+            FROM signals
             WHERE timestamp >= datetime('now', '-1 day')
             ORDER BY composite_score DESC LIMIT 10
         """) as cur:
             rows = await cur.fetchall()
 
     msg = format_signals_message(rows)
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 SESSION_REGEX = re.compile(r"apisession=([a-zA-Z0-9]+)", re.IGNORECASE)
@@ -113,18 +114,18 @@ async def handle_session_token_submission(token: str, update: Update, context: C
                 f"🕒 <b>Last Login:</b> {html.escape(str(last_login))}\n\n"
                 "🚀 <i>Session saved. Background portfolio & market sync initiated!</i>"
             )
-            await update.message.reply_text(success_msg, parse_mode='HTML')
+            await update.message.reply_text(success_msg, parse_mode="HTML")
         else:
             err = details.get("Error", "Unknown Breeze validation error")
             await update.message.reply_text(
                 f"❌ <b>Breeze Validation Failed:</b>\n<code>{html.escape(str(err))}</code>",
-                parse_mode='HTML',
+                parse_mode="HTML",
             )
     except Exception as e:
         logger.exception("Error validating Breeze session token")
         await update.message.reply_text(
             f"❌ <b>Error Validating Token:</b>\n<code>{html.escape(str(e))}</code>",
-            parse_mode='HTML',
+            parse_mode="HTML",
         )
 
 
@@ -145,7 +146,7 @@ async def session_message_handler(update: Update, context: ContextTypes.DEFAULT_
 @owner_only
 async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /refresh_session &lt;token&gt;", parse_mode='HTML')
+        await update.message.reply_text("Usage: /refresh_session &lt;token&gt;", parse_mode="HTML")
         return
     token = context.args[0]
 
@@ -155,21 +156,31 @@ async def refresh_session_command(update: Update, context: ContextTypes.DEFAULT_
         details = breeze.get_customer_details(api_session=token)
         if details.get("Success"):
             await save_session(token)
-            await update.message.reply_text("<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.", parse_mode='HTML')
+            await update.message.reply_text(
+                "<b>Token Validated. Starting Breeze Sync...</b>\nFull refresh started in background.",
+                parse_mode="HTML",
+            )
 
             import asyncio
+
             from core.data_refresh import run_breeze_sync
+
             asyncio.create_task(run_breeze_sync(context.application, silent=False))
         else:
-            await update.message.reply_text(f"<b>Failed to validate token.</b> API Response: {details.get('Error', 'Unknown error')}", parse_mode='HTML')
+            await update.message.reply_text(
+                f"<b>Failed to validate token.</b> API Response: {details.get('Error', 'Unknown error')}",
+                parse_mode="HTML",
+            )
     except Exception as e:
-        await update.message.reply_text(f"<b>Error validating token:</b> {e}", parse_mode='HTML')
+        await update.message.reply_text(f"<b>Error validating token:</b> {e}", parse_mode="HTML")
 
 
 @owner_only
 async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /watchlist add &lt;TICKER&gt;, /watchlist remove &lt;TICKER&gt;, /watchlist list", parse_mode='HTML')
+        await update.message.reply_text(
+            "Usage: /watchlist add &lt;TICKER&gt;, /watchlist remove &lt;TICKER&gt;, /watchlist list", parse_mode="HTML"
+        )
         return
 
     action = context.args[0].lower()
@@ -179,14 +190,14 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT stock_code FROM watchlist") as cur:
                 rows = await cur.fetchall()
         if not rows:
-            await update.message.reply_text("Watchlist is empty.", parse_mode='HTML')
+            await update.message.reply_text("Watchlist is empty.", parse_mode="HTML")
             return
         msg = "<b>Watchlist:</b>\n" + "\n".join([f"- <code>{r[0]}</code>" for r in rows])
-        await update.message.reply_text(msg, parse_mode='HTML')
+        await update.message.reply_text(msg, parse_mode="HTML")
         return
 
     if len(context.args) < 2:
-        await update.message.reply_text(f"Usage: /watchlist {action} &lt;TICKER&gt;", parse_mode='HTML')
+        await update.message.reply_text(f"Usage: /watchlist {action} &lt;TICKER&gt;", parse_mode="HTML")
         return
 
     ticker = context.args[1].upper()
@@ -194,13 +205,16 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "add":
         breeze = await get_breeze_client()
         if not breeze:
-            await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode='HTML')
+            await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode="HTML")
             return
 
         try:
             res = breeze.get_names(exchange_code="NSE", stock_code=ticker)
             if res.get("Status") == 500:
-                await update.message.reply_text(f"Validation failed for <code>{ticker}</code>. It might not be a valid NSE stock.", parse_mode='HTML')
+                await update.message.reply_text(
+                    f"Validation failed for <code>{ticker}</code>. It might not be a valid NSE stock.",
+                    parse_mode="HTML",
+                )
                 return
         except Exception as e:
             logger.error(f"Error validating ticker {ticker}: {e}")
@@ -217,24 +231,24 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(
                 f"Added <code>{ticker}</code> to watchlist! Triggered historical backfill in background.",
-                parse_mode='HTML'
+                parse_mode="HTML",
             )
         except sqlite3.IntegrityError:
-            await update.message.reply_text(f"<code>{ticker}</code> is already in watchlist.", parse_mode='HTML')
+            await update.message.reply_text(f"<code>{ticker}</code> is already in watchlist.", parse_mode="HTML")
 
     elif action == "remove":
         async with aiosqlite.connect(settings.db_path) as db:
             await db.execute("DELETE FROM watchlist WHERE stock_code = ?", (ticker,))
             await db.commit()
-        await update.message.reply_text(f"Removed <code>{ticker}</code> from watchlist.", parse_mode='HTML')
+        await update.message.reply_text(f"Removed <code>{ticker}</code> from watchlist.", parse_mode="HTML")
     else:
-        await update.message.reply_text("Unknown action. Use add, remove, or list.", parse_mode='HTML')
+        await update.message.reply_text("Unknown action. Use add, remove, or list.", parse_mode="HTML")
 
 
 @owner_only
 async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /price &lt;TICKER&gt;", parse_mode='HTML')
+        await update.message.reply_text("Usage: /price &lt;TICKER&gt;", parse_mode="HTML")
         return
     ticker = context.args[0].upper()
 
@@ -249,29 +263,30 @@ async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg = f"<b>{ticker}</b>: ₹{ltp}"
                 if change:
                     msg += f" ({change}%)"
-                await update.message.reply_text(msg, parse_mode='HTML')
+                await update.message.reply_text(msg, parse_mode="HTML")
                 return
         except Exception as e:
             logger.warning(f"Breeze quote failed for {ticker}, falling back to yfinance: {e}")
 
     # Fallback to yfinance
     from core.providers import YFinanceProvider
+
     provider = YFinanceProvider()
     quote = provider.get_quote(ticker)
     if quote:
         msg = f"<b>{ticker}</b>: ₹{quote['ltp']}"
         if quote.get("change") is not None:
             msg += f" ({quote['change']:+.2f}%)"
-        await update.message.reply_text(msg, parse_mode='HTML')
+        await update.message.reply_text(msg, parse_mode="HTML")
     else:
-        await update.message.reply_text(f"Could not fetch price for <code>{ticker}</code>.", parse_mode='HTML')
+        await update.message.reply_text(f"Could not fetch price for <code>{ticker}</code>.", parse_mode="HTML")
 
 
 @owner_only
 async def funds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     breeze = await get_breeze_client()
     if not breeze:
-        await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode='HTML')
+        await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode="HTML")
         return
 
     funds = breeze.get_funds()
@@ -299,7 +314,7 @@ async def funds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if blk > 0:
             msg += f"<b>Blocked by Trade:</b> ₹{blk:,.2f}\n"
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
@@ -319,6 +334,7 @@ async def trades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     breeze = await get_breeze_client()
     if breeze:
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
         from_date = (now - timedelta(days=30 if summary_only else 7)).strftime("%Y-%m-%dT06:00:00.000Z")
         to_date = now.strftime("%Y-%m-%dT06:00:00.000Z")
@@ -334,7 +350,7 @@ async def trades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not trades:
         await update.message.reply_text(
             "<b>Recent Trades:</b>\nNo trade executions found in the last 7 days (or local database).",
-            parse_mode='HTML'
+            parse_mode="HTML",
         )
         return
 
@@ -343,7 +359,7 @@ async def trades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if summary_only:
         msg = f"{header}\n\n<i>(Analyzed {len(trades)} recent executions from {source})</i>"
-        await update.message.reply_text(msg, parse_mode='HTML')
+        await update.message.reply_text(msg, parse_mode="HTML")
         return
 
     msg = f"{header}\n\n<b>Recent Executions:</b>\n"
@@ -366,17 +382,18 @@ async def trades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(trades) > 8:
         msg += f"\n<i>...and {len(trades) - 8} more trades. Use /trades summary for full stats.</i>"
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
 async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     breeze = await get_breeze_client()
     if not breeze:
-        await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode='HTML')
+        await update.message.reply_text("Could not init Breeze client. Is session token set?", parse_mode="HTML")
         return
 
     from datetime import datetime, timedelta, timezone
+
     now = datetime.now(timezone.utc)
     from_date = (now - timedelta(days=5)).strftime("%Y-%m-%dT06:00:00.000Z")
     to_date = now.strftime("%Y-%m-%dT06:00:00.000Z")
@@ -384,20 +401,22 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders_resp = breeze.get_order_list(from_date=from_date, to_date=to_date, exchange_code="NSE")
     if not orders_resp.get("Success"):
         err = orders_resp.get("Error") or "No recent orders found."
-        await update.message.reply_text(f"<b>Order Book:</b>\n{err}", parse_mode='HTML')
+        await update.message.reply_text(f"<b>Order Book:</b>\n{err}", parse_mode="HTML")
         return
 
     orders = orders_resp["Success"]
     msg = f"<b>📋 Order Book (Last 5 Days) [{len(orders)}]:</b>\n\n"
     for o in orders[:10]:
         st = o.get("status", "Unknown")
-        icon = "✅" if st.lower() == "executed" else ("⏳" if "pending" in st.lower() or "ordered" in st.lower() else "❌")
+        icon = (
+            "✅" if st.lower() == "executed" else ("⏳" if "pending" in st.lower() or "ordered" in st.lower() else "❌")
+        )
         msg += (
             f"{icon} <b>{o.get('stock_code')}</b> - {o.get('action')} {o.get('order_type')}\n"
             f"   Qty: {o.get('quantity')} @ ₹{o.get('price')} | Status: <b>{st}</b>\n"
             f"   Time: {o.get('order_datetime')}\n"
         )
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
@@ -409,7 +428,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT timestamp FROM session_tokens LIMIT 1") as cur:
             session_row = await cur.fetchone()
 
-        async with db.execute("SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5") as cur:
+        async with db.execute(
+            "SELECT stock_code, source, message, timestamp FROM data_health ORDER BY timestamp DESC LIMIT 5"
+        ) as cur:
             failures = await cur.fetchall()
 
     msg = "<b>System Status</b>\n\n"
@@ -433,7 +454,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         msg += "No recent data-fetch failures.\n"
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
@@ -461,7 +482,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help - Show this message\n\n"
         "💡 <i>Tip: You can also paste your <code>apisession=...</code> redirect URL or raw session token directly into the chat to refresh Breeze!</i>"
     )
-    await update.message.reply_text(help_text, parse_mode='HTML')
+    await update.message.reply_text(help_text, parse_mode="HTML")
 
 
 @owner_only
@@ -473,7 +494,7 @@ async def sips_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sips = [dict(r) for r in rows]
     msg = format_sips_message(sips)
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
@@ -485,7 +506,7 @@ async def cashflow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     dividend_rows = [dict(r) for r in rows]
     msg = format_cashflow_message(dividend_rows)
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
@@ -495,7 +516,7 @@ async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             rows = await cur.fetchall()
 
     if not rows:
-        await update.message.reply_text("No action plan data available.", parse_mode='HTML')
+        await update.message.reply_text("No action plan data available.", parse_mode="HTML")
         return
 
     msg = "<b>Portfolio Action Plan:</b>\n"
@@ -506,42 +527,56 @@ async def action_plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(msg) > 4000:
         msg = msg[:4000] + "\n... (truncated)"
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
 async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /analyse &lt;TICKER&gt;", parse_mode='HTML')
+        await update.message.reply_text("Usage: /analyse &lt;TICKER&gt;", parse_mode="HTML")
         return
     ticker = context.args[0].upper()
 
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM signals WHERE stock_code = ? ORDER BY timestamp DESC LIMIT 1", (ticker,)) as cur:
+        async with db.execute(
+            "SELECT * FROM signals WHERE stock_code = ? ORDER BY timestamp DESC LIMIT 1", (ticker,)
+        ) as cur:
             signal_row = await cur.fetchone()
         async with db.execute("SELECT * FROM stock_actions WHERE stock_code = ?", (ticker,)) as cur:
             action_row = await cur.fetchone()
         async with db.execute("SELECT * FROM holdings_snapshot WHERE stock_code = ?", (ticker,)) as cur:
             holding_row = await cur.fetchone()
-        async with db.execute("SELECT stage FROM stage_history WHERE stock_code = ? ORDER BY date DESC LIMIT 1", (ticker,)) as cur:
+        async with db.execute(
+            "SELECT stage FROM stage_history WHERE stock_code = ? ORDER BY date DESC LIMIT 1", (ticker,)
+        ) as cur:
             stage_row = await cur.fetchone()
-        async with db.execute("SELECT tax_category, holding_days FROM tax_lots_view WHERE stock_code = ? ORDER BY buy_date ASC LIMIT 1", (ticker,)) as cur:
+        async with db.execute(
+            "SELECT tax_category, holding_days FROM tax_lots_view WHERE stock_code = ? ORDER BY buy_date ASC LIMIT 1",
+            (ticker,),
+        ) as cur:
             tax_lot_row = await cur.fetchone()
 
     breeze = await get_breeze_client()
     if breeze:
         try:
             quote = breeze.get_quotes(stock_code=ticker, exchange_code="NSE", product_type="cash")
-            quote = {"ltp": float(quote["Success"][0]["ltp"]), "change": quote["Success"][0].get("change")} if quote.get("Success") else None
+            quote = (
+                {"ltp": float(quote["Success"][0]["ltp"]), "change": quote["Success"][0].get("change")}
+                if quote.get("Success")
+                else None
+            )
         except Exception:
             from core.providers import YFinanceProvider
+
             quote = YFinanceProvider().get_quote(ticker)
     else:
         from core.providers import YFinanceProvider
+
         quote = YFinanceProvider().get_quote(ticker)
 
     from .formatters import format_stock_analysis_message
+
     msg = format_stock_analysis_message(ticker, signal_row, action_row, quote)
 
     # Enrich with AI analyst assessment from Ollama using compressed telemetry
@@ -562,7 +597,9 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     metrics = {
         "ticker": ticker,
-        "price": quote["ltp"] if (quote and quote.get("ltp")) else (holding_row["current_price"] if holding_row else None),
+        "price": quote["ltp"]
+        if (quote and quote.get("ltp"))
+        else (holding_row["current_price"] if holding_row else None),
         "stage": stage_row["stage"] if stage_row else None,
         "signal": dict(signal_row) if signal_row else {},
         "action": action_row["action"] if action_row else "HOLD",
@@ -572,7 +609,7 @@ async def analyse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ai_commentary:
         msg += f"\n\n🤖 <b>AI Analyst:</b>\n<code>{html.escape(ai_commentary)}</code>"
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 @owner_only
@@ -581,7 +618,9 @@ async def sgb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from algo.sgb_arbitrage import SGB_TRANCHE_METADATA, analyze_sgb_secondary_market
     from core.providers import YFinanceProvider
 
-    await update.message.reply_text("🔍 <i>Scanning SGB secondary market tranches & gold spot...</i>", parse_mode='HTML')
+    await update.message.reply_text(
+        "🔍 <i>Scanning SGB secondary market tranches & gold spot...</i>", parse_mode="HTML"
+    )
 
     # 1. Fetch benchmark gold price (GOLDBEES or gold spot)
     yfp = YFinanceProvider()
@@ -601,13 +640,11 @@ async def sgb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sgb_quotes = {"SGBOCT26": 7350.0, "SGBMAY29": 7400.0, "SGBDEC28": 7420.0}
 
     opps, payload = analyze_sgb_secondary_market(
-        sgb_quotes=sgb_quotes,
-        goldbees_price=goldbees_price or 82.5,
-        discount_threshold_pct=2.0
+        sgb_quotes=sgb_quotes, goldbees_price=goldbees_price or 82.5, discount_threshold_pct=2.0
     )
 
     if not opps:
-        await update.message.reply_text("No active SGB arbitrage opportunities found currently.", parse_mode='HTML')
+        await update.message.reply_text("No active SGB arbitrage opportunities found currently.", parse_mode="HTML")
         return
 
     msg = "🏆 <b>Sovereign Gold Bond (SGB) Secondary Arbitrage</b>\n\n"
@@ -625,7 +662,7 @@ async def sgb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if payload and payload.get("trade_racer_csv"):
         msg += f"\n📋 <b>Trade Racer Basket CSV:</b>\n<code>{html.escape(payload['trade_racer_csv'].strip())}</code>"
 
-    await update.message.reply_text(msg, parse_mode='HTML', disable_web_page_preview=True)
+    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
 
 @owner_only
@@ -633,7 +670,7 @@ async def cashsweep_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Evaluate idle cash float and output sweeps to LIQUIDBEES or Stage 2 compounder."""
     from algo.liquid_float_sweeper import evaluate_liquid_float_sweep
 
-    await update.message.reply_text("💸 <i>Evaluating idle cash drag & paused SIP float...</i>", parse_mode='HTML')
+    await update.message.reply_text("💸 <i>Evaluating idle cash drag & paused SIP float...</i>", parse_mode="HTML")
 
     unalloc = 0.0
     breeze = await get_breeze_client()
@@ -646,15 +683,14 @@ async def cashsweep_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
     async with aiosqlite.connect(settings.db_path) as db:
-        async with db.execute("SELECT ticker, stage FROM stage_history WHERE stage = 2 ORDER BY date DESC LIMIT 1") as cur:
+        async with db.execute(
+            "SELECT ticker, stage FROM stage_history WHERE stage = 2 ORDER BY date DESC LIMIT 1"
+        ) as cur:
             row = await cur.fetchone()
             stage2_ticker = row[0] if row else "POWINF"
 
     report = await evaluate_liquid_float_sweep(
-        db_path=settings.db_path,
-        unallocated_cash=unalloc,
-        stage2_leader_ticker=stage2_ticker,
-        threshold=5000.0
+        db_path=settings.db_path, unallocated_cash=unalloc, stage2_leader_ticker=stage2_ticker, threshold=5000.0
     )
 
     msg = (
@@ -677,18 +713,36 @@ async def cashsweep_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if upi:
                 msg += f'\n💳 <a href="{upi}"><b>1-Tap UPI Mandate Link</b></a>\n'
 
-    await update.message.reply_text(msg, parse_mode='HTML', disable_web_page_preview=True)
+    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
 
 @owner_only
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📊 Portfolio", callback_data="portfolio"), InlineKeyboardButton("📈 Signals", callback_data="signals")],
-        [InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"), InlineKeyboardButton("🔍 Audit", callback_data="audit")],
-        [InlineKeyboardButton("💰 Funds", callback_data="funds"), InlineKeyboardButton("💵 Cashflow", callback_data="cashflow")],
-        [InlineKeyboardButton("🏆 SGB Arbitrage", callback_data="sgb"), InlineKeyboardButton("🌊 Cash Sweep", callback_data="cashsweep")],
-        [InlineKeyboardButton("📋 SIP Book", callback_data="sips"), InlineKeyboardButton("🧾 Trades", callback_data="trades")],
-        [InlineKeyboardButton("📋 Orders", callback_data="orders"), InlineKeyboardButton("⚙️ Status", callback_data="status")],
+        [
+            InlineKeyboardButton("📊 Portfolio", callback_data="portfolio"),
+            InlineKeyboardButton("📈 Signals", callback_data="signals"),
+        ],
+        [
+            InlineKeyboardButton("🎯 Action Plan", callback_data="action_plan"),
+            InlineKeyboardButton("🔍 Audit", callback_data="audit"),
+        ],
+        [
+            InlineKeyboardButton("💰 Funds", callback_data="funds"),
+            InlineKeyboardButton("💵 Cashflow", callback_data="cashflow"),
+        ],
+        [
+            InlineKeyboardButton("🏆 SGB Arbitrage", callback_data="sgb"),
+            InlineKeyboardButton("🌊 Cash Sweep", callback_data="cashsweep"),
+        ],
+        [
+            InlineKeyboardButton("📋 SIP Book", callback_data="sips"),
+            InlineKeyboardButton("🧾 Trades", callback_data="trades"),
+        ],
+        [
+            InlineKeyboardButton("📋 Orders", callback_data="orders"),
+            InlineKeyboardButton("⚙️ Status", callback_data="status"),
+        ],
     ]
     await update.message.reply_text("Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -720,10 +774,13 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 @owner_only
 async def audit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Trigger 2-ticker chunked portfolio risk audit across active holdings using pralabs:edge."""
-    status_msg = await update.message.reply_text("⏳ <i>Running edge risk audit on pralabs:edge...</i>", parse_mode='HTML')
+    status_msg = await update.message.reply_text(
+        "⏳ <i>Running edge risk audit on pralabs:edge...</i>", parse_mode="HTML"
+    )
 
     try:
         from core.ai_analyst import generate_batch_ai_analysis
+
         async with aiosqlite.connect(settings.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
@@ -793,6 +850,6 @@ async def audit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             full_msg = f"✅ <b>Portfolio Risk Audit Clear</b>\nAll {len(rows)} holdings maintain intact structure and active stops (100% ACT:HOLD)."
 
-        await status_msg.edit_text(full_msg, parse_mode='HTML')
+        await status_msg.edit_text(full_msg, parse_mode="HTML")
     except Exception as e:
         await status_msg.edit_text(f"❌ Error during edge audit: {e}")

@@ -1,6 +1,7 @@
 """Stage-Gated Bell-Curve Pullback Formula for SIP Quant Multipliers and Portfolio Allocation."""
 
 from typing import Dict, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 
@@ -98,7 +99,7 @@ def compute_sip_multiplier(
     sigma: float = 1.5,
 ) -> float:
     """Helper alias for calculate_sip_multiplier directly using z score.
-    
+
     Formula:
         M_i = S_stage * clip(0.5 + 1.5 * exp(-((z - z*)^2)/(2 * sigma^2)) * (RS/80)^beta * V_pen, 0.5, 2.0)
         For z* = 0.5, sigma = 1.5, 2 * sigma^2 = 4.5.
@@ -114,7 +115,8 @@ def compute_sip_multiplier(
         s_stage = 0.5
 
     import math
-    denom = 2.0 * (sigma ** 2)
+
+    denom = 2.0 * (sigma**2)
     gauss = math.exp(-((z - z_star) ** 2) / denom)
     rs_term = (max(0.0, float(rs)) / 80.0) ** beta
     v_pen = 0.6 if dist_days >= 4 else 1.0
@@ -328,6 +330,5 @@ def normalize_sip_budget(
         return {k: 0.0 for k in base_allocations}
 
     return {
-        ticker: round(float(total_budget * (weight / total_weighted)), 2)
-        for ticker, weight in raw_weighted.items()
+        ticker: round(float(total_budget * (weight / total_weighted)), 2) for ticker, weight in raw_weighted.items()
     }

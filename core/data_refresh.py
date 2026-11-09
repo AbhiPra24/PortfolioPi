@@ -28,7 +28,7 @@ def get_historical_with_retry(breeze, stock_code, from_date, to_date):
         to_date=to_date,
         stock_code="NIFTY" if stock_code == "_NIFTY50" else stock_code,
         exchange_code="NSE",
-        product_type="cash"
+        product_type="cash",
     )
 
 
@@ -51,10 +51,7 @@ async def sync_breeze_trades_and_orders(breeze: BreezeClient) -> dict:
     trade_to = now.strftime("%Y-%m-%dT06:00:00.000Z")
     try:
         trades_resp = await asyncio.to_thread(
-            breeze.get_trade_list,
-            from_date=trade_from,
-            to_date=trade_to,
-            exchange_code="NSE"
+            breeze.get_trade_list, from_date=trade_from, to_date=trade_to, exchange_code="NSE"
         )
     except Exception as e:
         logger.error(f"Failed to fetch trades from Breeze: {e}")
@@ -65,10 +62,7 @@ async def sync_breeze_trades_and_orders(breeze: BreezeClient) -> dict:
     order_to = now.strftime("%Y-%m-%dT06:00:00.000Z")
     try:
         orders_resp = await asyncio.to_thread(
-            breeze.get_order_list,
-            from_date=order_from,
-            to_date=order_to,
-            exchange_code="NSE"
+            breeze.get_order_list, from_date=order_from, to_date=order_to, exchange_code="NSE"
         )
     except Exception as e:
         logger.error(f"Failed to fetch orders from Breeze: {e}")
@@ -108,7 +102,8 @@ async def sync_breeze_trades_and_orders(breeze: BreezeClient) -> dict:
                 product_type = str(t.get("product_type") or "").strip()
                 exchange_code = str(t.get("exchange_code") or "NSE").strip()
 
-                await db.execute("""
+                await db.execute(
+                    """
                     INSERT INTO trades_history (
                         order_id, trade_id, trade_date, stock_code, action, quantity,
                         average_cost, ltp, brokerage_amount, total_taxes, product_type, exchange_code
@@ -125,10 +120,22 @@ async def sync_breeze_trades_and_orders(breeze: BreezeClient) -> dict:
                         total_taxes=excluded.total_taxes,
                         product_type=excluded.product_type,
                         exchange_code=excluded.exchange_code
-                """, (
-                    order_id, trade_id, trade_date, stock_code, action, quantity,
-                    average_cost, ltp, brokerage_amount, total_taxes, product_type, exchange_code
-                ))
+                """,
+                    (
+                        order_id,
+                        trade_id,
+                        trade_date,
+                        stock_code,
+                        action,
+                        quantity,
+                        average_cost,
+                        ltp,
+                        brokerage_amount,
+                        total_taxes,
+                        product_type,
+                        exchange_code,
+                    ),
+                )
                 stats["trades_synced"] += 1
             await db.commit()
 
@@ -157,7 +164,8 @@ async def sync_breeze_trades_and_orders(breeze: BreezeClient) -> dict:
                 status = str(o.get("status") or "").strip()
                 exchange_code = str(o.get("exchange_code") or "NSE").strip()
 
-                await db.execute("""
+                await db.execute(
+                    """
                     INSERT INTO orders_history (
                         order_id, order_datetime, stock_code, action, order_type,
                         quantity, price, average_price, status, exchange_code
@@ -173,14 +181,26 @@ async def sync_breeze_trades_and_orders(breeze: BreezeClient) -> dict:
                         status=excluded.status,
                         exchange_code=excluded.exchange_code,
                         updated_at=CURRENT_TIMESTAMP
-                """, (
-                    order_id, order_datetime, stock_code, action, order_type,
-                    quantity, price, average_price, status, exchange_code
-                ))
+                """,
+                    (
+                        order_id,
+                        order_datetime,
+                        stock_code,
+                        action,
+                        order_type,
+                        quantity,
+                        price,
+                        average_price,
+                        status,
+                        exchange_code,
+                    ),
+                )
                 stats["orders_synced"] += 1
             await db.commit()
 
-    logger.info(f"Breeze trades & orders sync complete: {stats['trades_synced']} trades, {stats['orders_synced']} orders processed.")
+    logger.info(
+        f"Breeze trades & orders sync complete: {stats['trades_synced']} trades, {stats['orders_synced']} orders processed."
+    )
     return stats
 
 
@@ -210,7 +230,9 @@ async def run_breeze_sync(app=None, silent=True):
         async with aiosqlite.connect(settings.db_path) as db:
             # 1. Fetch Holdings
             holdings = await asyncio.to_thread(breeze.get_demat_holdings)
-            port_holdings = await asyncio.to_thread(breeze.get_portfolio_holding, exchange_code="NSE", from_date="", to_date="")
+            port_holdings = await asyncio.to_thread(
+                breeze.get_portfolio_holding, exchange_code="NSE", from_date="", to_date=""
+            )
 
             holdings_data = {}
             if isinstance(holdings, dict) and holdings.get("Success"):
@@ -220,20 +242,24 @@ async def run_breeze_sync(app=None, silent=True):
                         holdings_data[stock] = {
                             "stock_code": stock,
                             "quantity": int(item.get("quantity", 0) or 0),
-                            "average_price": float(item.get("average_price", 0) or 0)
+                            "average_price": float(item.get("average_price", 0) or 0),
                         }
             if isinstance(port_holdings, dict) and port_holdings.get("Success"):
                 for item in port_holdings.get("Success", []):
                     stock = item.get("stock_code")
                     if stock:
                         if stock in holdings_data:
-                            holdings_data[stock]["quantity"] = max(holdings_data[stock]["quantity"], int(item.get("quantity", 0) or 0))
-                            holdings_data[stock]["average_price"] = float(item.get("average_price", 0) or holdings_data[stock]["average_price"])
+                            holdings_data[stock]["quantity"] = max(
+                                holdings_data[stock]["quantity"], int(item.get("quantity", 0) or 0)
+                            )
+                            holdings_data[stock]["average_price"] = float(
+                                item.get("average_price", 0) or holdings_data[stock]["average_price"]
+                            )
                         else:
                             holdings_data[stock] = {
                                 "stock_code": stock,
                                 "quantity": int(item.get("quantity", 0) or 0),
-                                "average_price": float(item.get("average_price", 0) or 0)
+                                "average_price": float(item.get("average_price", 0) or 0),
                             }
 
             # We DO NOT update current_price here anymore, only quantity and avg price. We rely on market_data_job for price.
@@ -241,24 +267,32 @@ async def run_breeze_sync(app=None, silent=True):
             if holdings_data:
                 for stock, data in holdings_data.items():
                     # Insert or update holding ground truth
-                    await db.execute("""
+                    await db.execute(
+                        """
                         INSERT INTO holdings_snapshot (stock_code, quantity, average_price, current_price)
                         VALUES (?, ?, ?, 0)
                         ON CONFLICT(stock_code) DO UPDATE SET
                             quantity=excluded.quantity,
                             average_price=excluded.average_price
-                    """, (stock, data["quantity"], data["average_price"]))
+                    """,
+                        (stock, data["quantity"], data["average_price"]),
+                    )
                 await db.commit()
 
                 # Record portfolio history (invested vs current value)
-                async with db.execute("SELECT SUM(quantity * average_price), SUM(quantity * current_price) FROM holdings_snapshot") as cur:
+                async with db.execute(
+                    "SELECT SUM(quantity * average_price), SUM(quantity * current_price) FROM holdings_snapshot"
+                ) as cur:
                     totals_row = await cur.fetchone()
                 if totals_row and totals_row[0] is not None and totals_row[1] is not None:
                     tot_invested, tot_current = totals_row[0], totals_row[1]
-                    await db.execute("""
+                    await db.execute(
+                        """
                         INSERT INTO portfolio_value_history (total_invested, total_current_value, total_pnl)
                         VALUES (?, ?, ?)
-                    """, (tot_invested, tot_current, tot_current - tot_invested))
+                    """,
+                        (tot_invested, tot_current, tot_current - tot_invested),
+                    )
                     await db.commit()
 
                     # Trigger portfolio risk metrics computation
@@ -280,10 +314,13 @@ async def run_breeze_sync(app=None, silent=True):
                             nse_sym = first_match.get("exchange_stock_code") or ticker
                             isin = first_match.get("isincode") or ""
                             if nse_sym:
-                                await db.execute("""
+                                await db.execute(
+                                    """
                                     INSERT INTO ticker_mapping (stock_code, nse_symbol, isin) VALUES (?, ?, ?)
                                     ON CONFLICT (stock_code) DO NOTHING
-                                """, (ticker, nse_sym, isin))
+                                """,
+                                    (ticker, nse_sym, isin),
+                                )
                                 await db.commit()
                                 new_mappings_count += 1
                                 logger.info(f"Resolved new ticker mapping: {ticker} -> {nse_sym}")
@@ -319,33 +356,38 @@ async def run_breeze_sync(app=None, silent=True):
                             for row in hist_data.get("Success", []):
                                 dt = dateutil.parser.parse(row["datetime"])
                                 date_str = dt.strftime("%Y-%m-%d")
-                                records.append((
-                                    ticker,
-                                    date_str,
-                                    float(row["open"]),
-                                    float(row["high"]),
-                                    float(row["low"]),
-                                    float(row["close"]),
-                                    int(row["volume"])
-                                ))
+                                records.append(
+                                    (
+                                        ticker,
+                                        date_str,
+                                        float(row["open"]),
+                                        float(row["high"]),
+                                        float(row["low"]),
+                                        float(row["close"]),
+                                        int(row["volume"]),
+                                    )
+                                )
                             if records:
-                                await db.executemany("""
-                                    INSERT OR IGNORE INTO ohlcv_cache 
+                                await db.executemany(
+                                    """
+                                    INSERT OR IGNORE INTO ohlcv_cache
                                     (stock_code, date, open, high, low, close, volume)
                                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                                """, records)
+                                """,
+                                    records,
+                                )
                                 await db.commit()
                         else:
                             await db.execute(
                                 "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'breeze', 'failed', ?)",
-                                (ticker, str(hist_data.get("Error") or "No data returned"))
+                                (ticker, str(hist_data.get("Error") or "No data returned")),
                             )
                             await db.commit()
                     except Exception as e:
                         logger.error(f"Breeze fetch failed for {ticker}: {e}")
                         await db.execute(
                             "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, 'breeze', 'failed', ?)",
-                            (ticker, str(e))
+                            (ticker, str(e)),
                         )
                         await db.commit()
 
@@ -374,6 +416,7 @@ async def run_breeze_sync(app=None, silent=True):
     except Exception as e:
         logger.exception("Error in run_breeze_sync")
         import html
+
         if not silent and app:
             await broadcast_message(app, f"🚨 Unhandled Error in Breeze Sync:\n{html.escape(str(e))}")
 
@@ -382,10 +425,13 @@ async def _normalize_and_upsert_ohlcv(db, ticker, rows):
     if not rows:
         return
     records = [(ticker, r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"]) for r in rows]
-    await db.executemany("""
+    await db.executemany(
+        """
         INSERT OR IGNORE INTO ohlcv_cache (stock_code, date, open, high, low, close, volume)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, records)
+    """,
+        records,
+    )
     await db.commit()
 
 
@@ -409,7 +455,6 @@ async def backfill_ticker_history(db, ticker, provider, depth_days=1095, chunk_d
 async def run_market_data_refresh(app=None, send_digest=False):
     """Market data refresh: Uses Breeze if session available, fallback to yfinance."""
     from algo.action_classifier import get_stock_action
-    from algo.screener import run_screener
     from core.breeze_client import BreezeClient, SessionExpiredError
     from core.providers import BreezeProvider, YFinanceProvider
     from core.session_store import get_session
@@ -455,7 +500,7 @@ async def run_market_data_refresh(app=None, send_digest=False):
                         logger.error(f"Backfill failed for {ticker}: {e}")
                         await db.execute(
                             "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, ?, 'failed', ?)",
-                            (ticker, source_name, str(e))
+                            (ticker, source_name, str(e)),
                         )
                         await db.commit()
                 else:
@@ -473,7 +518,7 @@ async def run_market_data_refresh(app=None, send_digest=False):
                             logger.error(f"{source_name} fetch failed for {ticker}: {e}")
                             await db.execute(
                                 "INSERT INTO data_health (stock_code, source, status, message) VALUES (?, ?, 'failed', ?)",
-                                (ticker, source_name, str(e))
+                                (ticker, source_name, str(e)),
                             )
                             await db.commit()
 
@@ -497,9 +542,11 @@ async def run_market_data_refresh(app=None, send_digest=False):
                 "SELECT stock_code, date, open, high, low, close, volume FROM ohlcv_cache WHERE stock_code = '_NIFTY50' ORDER BY date DESC LIMIT 300"
             ) as cur:
                 nifty_rows = await cur.fetchall()
-            nifty_df = pd.DataFrame(list(reversed(nifty_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                nifty_df[col] = pd.to_numeric(nifty_df[col], errors='coerce')
+            nifty_df = pd.DataFrame(
+                list(reversed(nifty_rows)), columns=["stock_code", "date", "open", "high", "low", "close", "volume"]
+            )
+            for col in ["open", "high", "low", "close", "volume"]:
+                nifty_df[col] = pd.to_numeric(nifty_df[col], errors="coerce")
 
             action_inserts = []
             stage_inserts = []
@@ -510,15 +557,18 @@ async def run_market_data_refresh(app=None, send_digest=False):
                 ) as cur:
                     stock_rows = await cur.fetchall()
                 if stock_rows:
-                    stock_df = pd.DataFrame(list(reversed(stock_rows)), columns=['stock_code', 'date', 'open', 'high', 'low', 'close', 'volume'])
-                    for col in ['open', 'high', 'low', 'close', 'volume']:
-                        stock_df[col] = pd.to_numeric(stock_df[col], errors='coerce')
+                    stock_df = pd.DataFrame(
+                        list(reversed(stock_rows)),
+                        columns=["stock_code", "date", "open", "high", "low", "close", "volume"],
+                    )
+                    for col in ["open", "high", "low", "close", "volume"]:
+                        stock_df[col] = pd.to_numeric(stock_df[col], errors="coerce")
                     res = get_stock_action(ticker, stock_df, nifty_df, ticker in holdings)
-                    action_inserts.append((ticker, res['action'], res['rationale']))
+                    action_inserts.append((ticker, res["action"], res["rationale"]))
 
-                    last_date = stock_df.iloc[-1]['date']
+                    last_date = stock_df.iloc[-1]["date"]
                     date_str = last_date[:10]
-                    stage_inserts.append((ticker, date_str, res['stage'], res['sma_150'], res['slope']))
+                    stage_inserts.append((ticker, date_str, res["stage"], res["sma_150"], res["slope"]))
 
             if action_inserts:
                 await db.execute("DELETE FROM stock_actions")
@@ -528,10 +578,13 @@ async def run_market_data_refresh(app=None, send_digest=False):
                 )
 
             if stage_inserts:
-                await db.executemany("""
+                await db.executemany(
+                    """
                     INSERT OR REPLACE INTO stage_history (stock_code, date, stage, sma_150, slope)
                     VALUES (?, ?, ?, ?, ?)
-                """, stage_inserts)
+                """,
+                    stage_inserts,
+                )
 
             # Clean up old signals and heartbeats to conserve database storage and reduce backup egress
             await db.execute("DELETE FROM signals WHERE timestamp < datetime('now', '-30 days')")
@@ -550,8 +603,13 @@ async def run_market_data_refresh(app=None, send_digest=False):
 
             # 4. Format HTML digest and broadcast ONLY IF requested (daily digest)
             if send_digest and app:
-                async with db.execute("SELECT stock_code, quantity, average_price, current_price FROM holdings_snapshot") as cur:
-                    holdings_list = [{"stock_code": r[0], "quantity": r[1], "average_price": r[2], "current_price": r[3]} for r in await cur.fetchall()]
+                async with db.execute(
+                    "SELECT stock_code, quantity, average_price, current_price FROM holdings_snapshot"
+                ) as cur:
+                    holdings_list = [
+                        {"stock_code": r[0], "quantity": r[1], "average_price": r[2], "current_price": r[3]}
+                        for r in await cur.fetchall()
+                    ]
 
                 port_msg = format_portfolio_message(holdings_list)
                 sig_msg = format_signals_message(signals)

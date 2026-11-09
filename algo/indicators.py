@@ -11,6 +11,7 @@ def calculate_rsi(series: pd.Series, period=14) -> float:
     rsi = 100 - (100 / (1 + rs))
     return rsi.iloc[-1] if not rsi.empty and not pd.isna(rsi.iloc[-1]) else 50.0
 
+
 def calculate_macd(series: pd.Series, fast=12, slow=26, signal=9):
     exp1 = series.ewm(span=fast, adjust=False).mean()
     exp2 = series.ewm(span=slow, adjust=False).mean()
@@ -20,14 +21,17 @@ def calculate_macd(series: pd.Series, fast=12, slow=26, signal=9):
         return 0.0, 0.0
     return macd_line.iloc[-1], signal_line.iloc[-1]
 
+
 def calculate_sma(series: pd.Series, period: int) -> float:
     sma = series.rolling(window=period).mean()
     return sma.iloc[-1] if not sma.empty and not pd.isna(sma.iloc[-1]) else 0.0
+
 
 def proximity_to_52w_high(current_price: float, high_52w: float) -> float:
     if high_52w is None or pd.isna(high_52w) or high_52w == 0 or current_price is None or pd.isna(current_price):
         return None
     return float(((float(high_52w) - float(current_price)) / float(high_52w)) * 100.0)
+
 
 def volume_spike(current_volume: int, volume_series: pd.Series, period=20) -> float:
     avg_vol = volume_series.rolling(window=period).mean()

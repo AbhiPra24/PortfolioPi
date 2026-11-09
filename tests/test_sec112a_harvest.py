@@ -1,14 +1,7 @@
 """Unit tests for Section 112A Tax-Gain Harvest Reset and Trade Racer Basket generation."""
 
-from datetime import date
-import pytest
-
 from algo.order_payloads import parse_trade_racer_csv
 from algo.tax_lots import plan_section_112a_harvest_reset
-from algo.tax_pairing import (
-    Section112AHarvestItem,
-    Section112AHarvestResult,
-)
 
 
 def test_section_112a_available_exemption_cap():

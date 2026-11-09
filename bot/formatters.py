@@ -1,11 +1,12 @@
 """Formats raw data and algorithm outputs into readable Telegram messages."""
 
+
 def format_portfolio_message(holdings: list) -> str:
     if not holdings:
         return "Your portfolio is currently empty or hasn't been fetched."
     msg = "📊 <b>Portfolio Summary</b>\n\n"
-    total_val = sum(h.get('current_price', 0) * h.get('quantity', 0) for h in holdings)
-    total_cost = sum(h.get('average_price', 0) * h.get('quantity', 0) for h in holdings)
+    total_val = sum(h.get("current_price", 0) * h.get("quantity", 0) for h in holdings)
+    total_cost = sum(h.get("average_price", 0) * h.get("quantity", 0) for h in holdings)
     pnl = total_val - total_cost
     pnl_pct = (pnl / total_cost * 100) if total_cost > 0 else 0
 
@@ -15,11 +16,12 @@ def format_portfolio_message(holdings: list) -> str:
 
     msg += "Top Holdings:\n"
     # sort by value
-    sorted_h = sorted(holdings, key=lambda x: x.get('current_price', 0) * x.get('quantity', 0), reverse=True)[:5]
+    sorted_h = sorted(holdings, key=lambda x: x.get("current_price", 0) * x.get("quantity", 0), reverse=True)[:5]
     for h in sorted_h:
-        val = h.get('current_price', 0) * h.get('quantity', 0)
+        val = h.get("current_price", 0) * h.get("quantity", 0)
         msg += f"- <code>{h.get('stock_code')}</code>: {h.get('quantity')} shs @ ₹{h.get('average_price', 0):.2f} (Val: ₹{val:,.2f})\n"
     return msg
+
 
 def format_signals_message(signals: list, actions_by_stock=None) -> str:
     if not signals:
@@ -54,13 +56,20 @@ def format_signals_message(signals: list, actions_by_stock=None) -> str:
         msg += f"  52w Dist: {pct_str}%\n\n"
     return msg
 
+
 def format_stock_analysis_message(ticker, signal_row, action_row, quote):
     lines = [f"<b>{ticker} Analysis</b>"]
     if quote:
-        lines.append(f"Price: ₹{quote['ltp']:.2f}" + (f" ({quote['change']:+.2f})" if quote.get('change') is not None else ""))
+        lines.append(
+            f"Price: ₹{quote['ltp']:.2f}" + (f" ({quote['change']:+.2f})" if quote.get("change") is not None else "")
+        )
     if signal_row:
-        lines.append(f"RSI(14): {signal_row['rsi14']:.1f} | MACD: {signal_row['macd_line']:.2f}/{signal_row['macd_signal']:.2f}")
-        lines.append(f"SMA50/200: {signal_row['sma50']:.2f}/{signal_row['sma200']:.2f} | Score: {signal_row['composite_score']:.0f}")
+        lines.append(
+            f"RSI(14): {signal_row['rsi14']:.1f} | MACD: {signal_row['macd_line']:.2f}/{signal_row['macd_signal']:.2f}"
+        )
+        lines.append(
+            f"SMA50/200: {signal_row['sma50']:.2f}/{signal_row['sma200']:.2f} | Score: {signal_row['composite_score']:.0f}"
+        )
     if action_row:
         lines.append(f"\n<b>Verdict: {action_row['action']}</b>\n<i>{action_row['rationale']}</i>")
     return "\n".join(lines)
@@ -70,14 +79,14 @@ def format_sips_message(sips: list) -> str:
     if not sips:
         return "No active SIPs found in the database."
 
-    total_monthly = sum(s.get('monthly_sip', 0) for s in sips)
+    total_monthly = sum(s.get("monthly_sip", 0) for s in sips)
     msg = f"📋 <b>Active SIP Book ({len(sips)} Instruments)</b>\n"
     msg += f"<b>Total Monthly Inflow:</b> ₹{total_monthly:,.0f}\n\n"
 
     # Group by target_action
     grouped = {}
     for s in sips:
-        action = s.get('target_action') or 'HOLD'
+        action = s.get("target_action") or "HOLD"
         grouped.setdefault(action, []).append(s)
 
     order = [
@@ -90,17 +99,17 @@ def format_sips_message(sips: list) -> str:
     for action_key, header in order:
         items = grouped.get(action_key, [])
         if items:
-            subtotal = sum(i.get('monthly_sip', 0) for i in items)
+            subtotal = sum(i.get("monthly_sip", 0) for i in items)
             msg += f"{header} (₹{subtotal:,.0f}/mo):\n"
             for item in items:
-                ticker = item.get('ticker')
-                amount = item.get('monthly_sip', 0)
+                ticker = item.get("ticker")
+                amount = item.get("monthly_sip", 0)
                 msg += f"  • <code>{ticker}</code>: ₹{amount:,.0f}/mo\n"
             msg += "\n"
 
     # Any remaining unlisted actions
     known_keys = {k for k, _ in order}
-    other_items = [s for s in sips if (s.get('target_action') or 'HOLD') not in known_keys]
+    other_items = [s for s in sips if (s.get("target_action") or "HOLD") not in known_keys]
     if other_items:
         msg += "<b>Other Instruments:</b>\n"
         for item in other_items:
@@ -113,7 +122,7 @@ def format_cashflow_message(dividend_rows: list, total_holdings_count: int = 0) 
     if not dividend_rows:
         return "No dividend schedule data available."
 
-    total_annual = sum(float(r.get('est_annual_cashflow') or 0) for r in dividend_rows)
+    total_annual = sum(float(r.get("est_annual_cashflow") or 0) for r in dividend_rows)
     monthly_runrate = total_annual / 12.0
 
     msg = "💰 <b>Portfolio Dividend & Cashflow Engine</b>\n\n"
@@ -121,14 +130,13 @@ def format_cashflow_message(dividend_rows: list, total_holdings_count: int = 0) 
     msg += f"<b>Monthly Baseline Run-rate:</b> ~₹{monthly_runrate:,.0f} / month\n\n"
 
     msg += "<b>Top Yield-on-Cost (YoC) Generators:</b>\n"
-    sorted_yoc = sorted(dividend_rows, key=lambda x: float(x.get('yield_on_cost') or 0), reverse=True)
+    sorted_yoc = sorted(dividend_rows, key=lambda x: float(x.get("yield_on_cost") or 0), reverse=True)
     for r in sorted_yoc[:8]:
-        ticker = r.get('ticker')
-        yoc = float(r.get('yield_on_cost') or 0)
-        est = float(r.get('est_annual_cashflow') or 0)
-        freq = r.get('payout_frequency', 'PERIODIC')
+        ticker = r.get("ticker")
+        yoc = float(r.get("yield_on_cost") or 0)
+        est = float(r.get("est_annual_cashflow") or 0)
+        freq = r.get("payout_frequency", "PERIODIC")
         msg += f"  • <code>{ticker}</code>: YoC <b>{yoc:.2f}%</b> (₹{est:,.0f}/yr, {freq})\n"
 
     msg += "\n<i>Projections scale automatically as monthly SIPs compound.</i>"
     return msg
-

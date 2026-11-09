@@ -1,6 +1,7 @@
 import sqlite3
-import pytest
+
 import aiosqlite
+import pytest
 
 from algo.liquid_float_sweeper import (
     RedeploymentAction,

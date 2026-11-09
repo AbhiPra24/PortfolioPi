@@ -9,15 +9,12 @@ calculates:
   4. Generates execution order basket and UPI funding deep link.
 """
 
-from dataclasses import dataclass
 import datetime
-import math
 import re
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
-import pandas as pd
 
 from algo.order_payloads import BasketOrder, create_rebalance_execution_payload
-
 
 # Standard SGB Tranche Reference Database with Issue Prices & Maturity Dates
 # Default coupon rate: 2.5% p.a. payable semi-annually on nominal issue price
@@ -51,9 +48,26 @@ SGB_TRANCHE_METADATA: Dict[str, Dict[str, Any]] = {
 }
 
 MONTH_MAP = {
-    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
-    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
-    "MR": 3, "AL": 4, "JL": 7, "AG": 8, "SP": 9, "OC": 10, "NV": 11, "DE": 12,
+    "JAN": 1,
+    "FEB": 2,
+    "MAR": 3,
+    "APR": 4,
+    "MAY": 5,
+    "JUN": 6,
+    "JUL": 7,
+    "AUG": 8,
+    "SEP": 9,
+    "OCT": 10,
+    "NOV": 11,
+    "DEC": 12,
+    "MR": 3,
+    "AL": 4,
+    "JL": 7,
+    "AG": 8,
+    "SP": 9,
+    "OC": 10,
+    "NV": 11,
+    "DE": 12,
 }
 
 
@@ -167,9 +181,9 @@ def calculate_sgb_ytm(
     # Initial guess based on approximate yield formula:
     # y_approx = [Coupon + (Redemption - Price)/Years] / [(Redemption + Price)/2]
     annual_coupon = coupon_rate * issue_price
-    approx_ann_yield = (
-        annual_coupon + (face_redemption - traded_price) / years_to_mat
-    ) / ((face_redemption + traded_price) / 2.0)
+    approx_ann_yield = (annual_coupon + (face_redemption - traded_price) / years_to_mat) / (
+        (face_redemption + traded_price) / 2.0
+    )
     y_guess = max(0.001, approx_ann_yield / 2.0)
 
     y = y_guess
@@ -209,6 +223,7 @@ def calculate_sgb_ytm(
 @dataclass
 class SgbArbitrageOpportunity:
     """Represents an SGB secondary market arbitrage opportunity."""
+
     symbol: str
     traded_price: float
     spot_per_gram: float

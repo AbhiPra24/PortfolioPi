@@ -7,5 +7,6 @@ OVERRIDES: dict[str, str] = {
     # standard NSE trading symbol (confirm case-by-case via breeze.get_names()).
 }
 
+
 def map_to_yfinance_ticker(stock_code: str) -> str:
     return OVERRIDES.get(stock_code, f"{stock_code}{DEFAULT_SUFFIX}")

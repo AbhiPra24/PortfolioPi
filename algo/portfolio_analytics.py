@@ -2,29 +2,27 @@
 portfolio optimization (Mean-Variance, Min Vol, HRP), and guardrail validation.
 Inspired by Finance-Guru and EigenLedger.
 """
-from typing import Dict, List, Optional, Tuple, Union
+
+from typing import Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 
 from core.portfolio_analytics import (
-    compute_downside_deviation,
-    compute_sortino_ratio,
     compute_treynor_ratio,
-    compute_jensens_alpha,
-    compute_rolling_max_drawdown,
 )
 
 
 def compute_concentration(holdings_df: pd.DataFrame, top_n: int = 5) -> dict:
     """Computes Top-N concentration and individual weights."""
-    if holdings_df.empty or 'Current Value' not in holdings_df.columns:
+    if holdings_df.empty or "Current Value" not in holdings_df.columns:
         return {"top_n_pct": 0.0, "top_holdings": []}
-    
-    total = holdings_df['Current Value'].sum()
-    top = holdings_df.nlargest(top_n, 'Current Value')
+
+    total = holdings_df["Current Value"].sum()
+    top = holdings_df.nlargest(top_n, "Current Value")
     return {
-        "top_n_pct": float(top['Current Value'].sum() / total * 100) if total else 0.0,
-        "top_holdings": top[['Stock Code', 'Current Value']].to_dict('records'),
+        "top_n_pct": float(top["Current Value"].sum() / total * 100) if total else 0.0,
+        "top_holdings": top[["Stock Code", "Current Value"]].to_dict("records"),
     }
 
 
@@ -55,11 +53,12 @@ def rollup_stage_health(stage_rows: list) -> Dict[int, int]:
 # 1. RISK & RETURN METRICS (Inspired by Finance-Guru & EigenLedger)
 # ==============================================================================
 
+
 def compute_risk_metrics(
     returns: pd.Series,
     benchmark_returns: Optional[pd.Series] = None,
     risk_free_rate: float = 0.065,
-    periods_per_year: int = 252
+    periods_per_year: int = 252,
 ) -> Dict[str, float]:
     """
     Computes institutional risk metrics:
@@ -73,9 +72,15 @@ def compute_risk_metrics(
     clean_rets = returns.dropna()
     if len(clean_rets) < 10:
         return {
-            "cagr": 0.0, "annualized_vol": 0.0, "sharpe_ratio": 0.0,
-            "sortino_ratio": 0.0, "max_drawdown": 0.0, "var_95": 0.0,
-            "cvar_95": 0.0, "beta": 0.0, "alpha": 0.0
+            "cagr": 0.0,
+            "annualized_vol": 0.0,
+            "sharpe_ratio": 0.0,
+            "sortino_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "var_95": 0.0,
+            "cvar_95": 0.0,
+            "beta": 0.0,
+            "alpha": 0.0,
         }
 
     # Annualized Return & Vol
@@ -94,7 +99,11 @@ def compute_risk_metrics(
     # Sortino Ratio (downside deviation only)
     downside_rets = clean_rets[clean_rets < rf_daily] - rf_daily
     downside_std = downside_rets.std()
-    sortino = float((excess_rets.mean() / downside_std) * np.sqrt(periods_per_year)) if (downside_std and downside_std > 0) else 0.0
+    sortino = (
+        float((excess_rets.mean() / downside_std) * np.sqrt(periods_per_year))
+        if (downside_std and downside_std > 0)
+        else 0.0
+    )
 
     # Max Drawdown
     cum_returns = (1 + clean_rets).cumprod()
@@ -150,10 +159,9 @@ def compute_drawdown_series(prices: pd.Series) -> pd.Series:
 # 2. PORTFOLIO OPTIMIZATION (Inspired by EigenLedger / PyPortfolioOpt)
 # ==============================================================================
 
+
 def optimize_portfolio_weights(
-    price_matrix: pd.DataFrame,
-    objective: str = "max_sharpe",
-    risk_free_rate: float = 0.065
+    price_matrix: pd.DataFrame, objective: str = "max_sharpe", risk_free_rate: float = 0.065
 ) -> Dict[str, float]:
     """
     Computes analytical asset weights without heavy external dependencies:
@@ -205,7 +213,7 @@ def optimize_portfolio_weights(
         # Max Sharpe: w = S^-1 * (mu - rf) / (1' * S^-1 * (mu - rf))
         daily_rf = (1 + risk_free_rate) ** (1 / 252) - 1
         excess_means = returns.mean().values - daily_rf
-        
+
         # If all excess returns are negative, fall back to minimum volatility
         if np.all(excess_means <= 0):
             return optimize_portfolio_weights(price_matrix, objective="min_volatility", risk_free_rate=risk_free_rate)
@@ -226,11 +234,12 @@ def optimize_portfolio_weights(
 # 3. FAIL-CLOSED GUARDRAILS (Inspired by Finance-Guru)
 # ==============================================================================
 
+
 def check_guardrails(
     holdings_df: pd.DataFrame,
     max_position_cap_pct: float = 12.0,
     max_top5_cap_pct: float = 50.0,
-    min_holdings_count: int = 5
+    min_holdings_count: int = 5,
 ) -> List[Dict[str, str]]:
     """
     Evaluates fail-closed risk guardrails on current holdings:
@@ -239,39 +248,45 @@ def check_guardrails(
     - Under-diversification warning (< min_holdings_count)
     """
     alerts = []
-    if holdings_df.empty or 'Current Value' not in holdings_df.columns:
+    if holdings_df.empty or "Current Value" not in holdings_df.columns:
         return [{"level": "ERROR", "rule": "NO_DATA", "message": "No holdings data available to evaluate guardrails."}]
 
-    total_value = holdings_df['Current Value'].sum()
+    total_value = holdings_df["Current Value"].sum()
     if total_value <= 0:
         return alerts
 
     # 1. Total holdings count
     if len(holdings_df) < min_holdings_count:
-        alerts.append({
-            "level": "WARNING",
-            "rule": "UNDER_DIVERSIFICATION",
-            "message": f"Portfolio contains only {len(holdings_df)} holdings (recommended minimum is {min_holdings_count})."
-        })
+        alerts.append(
+            {
+                "level": "WARNING",
+                "rule": "UNDER_DIVERSIFICATION",
+                "message": f"Portfolio contains only {len(holdings_df)} holdings (recommended minimum is {min_holdings_count}).",
+            }
+        )
 
     # 2. Individual stock concentration cap
-    holdings_df['Weight'] = (holdings_df['Current Value'] / total_value) * 100.0
-    overweight = holdings_df[holdings_df['Weight'] > max_position_cap_pct]
+    holdings_df["Weight"] = (holdings_df["Current Value"] / total_value) * 100.0
+    overweight = holdings_df[holdings_df["Weight"] > max_position_cap_pct]
     for _, row in overweight.iterrows():
-        alerts.append({
-            "level": "DANGER",
-            "rule": "MAX_CONCENTRATION_BREACH",
-            "stock_code": row['Stock Code'],
-            "message": f"{row['Stock Code']} comprises {row['Weight']:.1f}% of portfolio (exceeds {max_position_cap_pct}% limit)."
-        })
+        alerts.append(
+            {
+                "level": "DANGER",
+                "rule": "MAX_CONCENTRATION_BREACH",
+                "stock_code": row["Stock Code"],
+                "message": f"{row['Stock Code']} comprises {row['Weight']:.1f}% of portfolio (exceeds {max_position_cap_pct}% limit).",
+            }
+        )
 
     # 3. Top 5 concentration cap
-    top5_pct = holdings_df.nlargest(5, 'Current Value')['Current Value'].sum() / total_value * 100.0
+    top5_pct = holdings_df.nlargest(5, "Current Value")["Current Value"].sum() / total_value * 100.0
     if top5_pct > max_top5_cap_pct:
-        alerts.append({
-            "level": "WARNING",
-            "rule": "TOP5_CONCENTRATION_BREACH",
-            "message": f"Top 5 holdings make up {top5_pct:.1f}% of total portfolio value (limit: {max_top5_cap_pct}%)."
-        })
+        alerts.append(
+            {
+                "level": "WARNING",
+                "rule": "TOP5_CONCENTRATION_BREACH",
+                "message": f"Top 5 holdings make up {top5_pct:.1f}% of total portfolio value (limit: {max_top5_cap_pct}%).",
+            }
+        )
 
     return alerts

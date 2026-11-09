@@ -11,4 +11,5 @@ async def main():
     await run_market_data_refresh(app, silent=True)
     print("Market data refresh done.")
 
+
 asyncio.run(main())

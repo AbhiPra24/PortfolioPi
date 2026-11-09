@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     def owner_ids_list(self) -> List[int]:
         if not self.telegram_owner_ids:
             return []
-        return [int(x.strip()) for x in self.telegram_owner_ids.split(',')]
+        return [int(x.strip()) for x in self.telegram_owner_ids.split(",")]
+
 
 settings = Settings()

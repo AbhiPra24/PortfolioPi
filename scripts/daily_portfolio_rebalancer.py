@@ -18,11 +18,10 @@ import argparse
 import json
 import math
 import os
-import sys
 import urllib.error
 import urllib.request
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 try:
     from algo.ai_analyst import audit_holdings
@@ -41,7 +40,6 @@ try:
         resolve_fallback_model,
         resolve_ollama_endpoint,
         resolve_ollama_model,
-        stream_ollama,
     )
 except ImportError:
     from ollama_common import (
@@ -52,9 +50,7 @@ except ImportError:
         resolve_fallback_model,
         resolve_ollama_endpoint,
         resolve_ollama_model,
-        stream_ollama,
     )
-
 
 
 def load_env_file(env_path: str = ".env") -> Dict[str, str]:
@@ -108,26 +104,20 @@ def send_telegram_broadcast(token: str, owner_ids: List[str], text: str) -> List
                 "disable_web_page_preview": True,
             }
             data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                endpoint,
-                data=data,
-                headers={"Content-Type": "application/json"}
-            )
+            req = urllib.request.Request(endpoint, data=data, headers={"Content-Type": "application/json"})
             try:
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     resp_data = json.loads(resp.read().decode("utf-8"))
                     if not resp_data.get("ok"):
                         chat_success = False
                         chat_err = str(resp_data)
-            except urllib.error.HTTPError as e:
+            except urllib.error.HTTPError:
                 # Fallback to plain text if Markdown syntax fails to parse in Telegram
                 try:
                     payload.pop("parse_mode", None)
                     data_plain = json.dumps(payload).encode("utf-8")
                     req_plain = urllib.request.Request(
-                        endpoint,
-                        data=data_plain,
-                        headers={"Content-Type": "application/json"}
+                        endpoint, data=data_plain, headers={"Content-Type": "application/json"}
                     )
                     with urllib.request.urlopen(req_plain, timeout=15) as resp2:
                         resp_data2 = json.loads(resp2.read().decode("utf-8"))
@@ -207,7 +197,7 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
         ORDER BY timestamp DESC
         LIMIT 1
     """)
-    pvh_row = cursor.fetchone()
+    cursor.fetchone()
     conn.close()
 
     total_invested = sum(r["qty"] * r["avg_price"] for r in rows)
@@ -287,32 +277,38 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
         is_distribution = "Stage 3" in rationale or "distribution" in rationale.lower() or "TRIM" in action.upper()
 
         if is_stage_4:
-            stage_4_declines.append({
-                "stock_code": sc,
-                "current_value": round(cur_val, 2),
-                "pnl": round(pnl, 2),
-                "slope": round(slope_val, 5) if slope_val is not None else None,
-                "action": action,
-                "rationale": rationale
-            })
+            stage_4_declines.append(
+                {
+                    "stock_code": sc,
+                    "current_value": round(cur_val, 2),
+                    "pnl": round(pnl, 2),
+                    "slope": round(slope_val, 5) if slope_val is not None else None,
+                    "action": action,
+                    "rationale": rationale,
+                }
+            )
 
         if is_chandelier:
-            chandelier_breaches.append({
-                "stock_code": sc,
-                "current_value": round(cur_val, 2),
-                "pnl": round(pnl, 2),
-                "action": action,
-                "rationale": rationale
-            })
+            chandelier_breaches.append(
+                {
+                    "stock_code": sc,
+                    "current_value": round(cur_val, 2),
+                    "pnl": round(pnl, 2),
+                    "action": action,
+                    "rationale": rationale,
+                }
+            )
 
         if is_distribution and not is_stage_4 and not is_chandelier:
-            distribution_warnings.append({
-                "stock_code": sc,
-                "current_value": round(cur_val, 2),
-                "pnl": round(pnl, 2),
-                "action": action,
-                "rationale": rationale
-            })
+            distribution_warnings.append(
+                {
+                    "stock_code": sc,
+                    "current_value": round(cur_val, 2),
+                    "pnl": round(pnl, 2),
+                    "action": action,
+                    "rationale": rationale,
+                }
+            )
 
     # Summary stage stats
     stage_breakdown = {}
@@ -327,13 +323,13 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
             "current_value": round(stg_val, 2),
             "portfolio_weight_pct": weight,
             "avg_slope": avg_slope,
-            "stocks": data["holdings"]
+            "stocks": data["holdings"],
         }
 
     # 4. Quantitative STCG vs LTCG Tax Optimization Ledger
     # In India, equity assets held <= 12 months are STCG taxed at 20% (Section 111A).
     # Short-Term Capital Losses (STCL) can offset STCG dollar-for-dollar under Section 70.
-    
+
     # Priority Loss Harvest Candidates:
     # Specifically SUZENE, XCHSOL, SWILIM, CANBAN, HTMGLO, etc.
     loss_harvest_targets = ["SUZENE", "XCHSOL", "SWILIM", "HTMGLO", "CANBAN", "NATMIN", "GUJMI", "INTPAP"]
@@ -346,16 +342,18 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
             if h["pnl"] < 0:
                 loss_amt = abs(h["pnl"])
                 total_stcl_harvested += loss_amt
-                harvested_losses.append({
-                    "stock_code": sc,
-                    "shares_to_sell": int(h["quantity"]),
-                    "current_price": h["current_price"],
-                    "freed_rupees": round(h["current_value"], 2),
-                    "harvested_loss": round(loss_amt, 2),
-                    "loss_pct": h["pnl_pct"],
-                    "stage": h["stage"],
-                    "reason": f"Tax-loss harvest & exit {h['action'] or 'decaying position'}"
-                })
+                harvested_losses.append(
+                    {
+                        "stock_code": sc,
+                        "shares_to_sell": int(h["quantity"]),
+                        "current_price": h["current_price"],
+                        "freed_rupees": round(h["current_value"], 2),
+                        "harvested_loss": round(loss_amt, 2),
+                        "loss_pct": h["pnl_pct"],
+                        "stage": h["stage"],
+                        "reason": f"Tax-loss harvest & exit {h['action'] or 'decaying position'}",
+                    }
+                )
 
     # Recommended Capital Cut Downs (Trims & Exits for overallocated/decaying assets)
     # - GOLDEX: Trim from ~12% down to 8% target cap (single asset guardrail 10%)
@@ -373,19 +371,21 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
         if trim_shares > 0:
             freed = round(trim_shares * g["current_price"], 2)
             stcg = round(trim_shares * (g["current_price"] - g["average_price"]), 2)
-            capital_cut_downs.append({
-                "stock_code": "GOLDEX",
-                "action_type": "PARTIAL_TRIM",
-                "current_shares": int(g["quantity"]),
-                "shares_to_sell": trim_shares,
-                "remaining_shares": int(g["quantity"]) - trim_shares,
-                "current_price": g["current_price"],
-                "freed_rupees": freed,
-                "realized_stcg": stcg,
-                "realized_stcl": 0.0,
-                "target_weight_pct": 8.0,
-                "rationale": "Overallocated (12.0% -> 8.0%). Single-asset concentration guardrail trim & lock profit."
-            })
+            capital_cut_downs.append(
+                {
+                    "stock_code": "GOLDEX",
+                    "action_type": "PARTIAL_TRIM",
+                    "current_shares": int(g["quantity"]),
+                    "shares_to_sell": trim_shares,
+                    "remaining_shares": int(g["quantity"]) - trim_shares,
+                    "current_price": g["current_price"],
+                    "freed_rupees": freed,
+                    "realized_stcg": stcg,
+                    "realized_stcl": 0.0,
+                    "target_weight_pct": 8.0,
+                    "rationale": "Overallocated (12.0% -> 8.0%). Single-asset concentration guardrail trim & lock profit.",
+                }
+            )
 
     # NIPSIL calculation
     if "NIPSIL" in holdings_dict:
@@ -396,19 +396,21 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
         if trim_shares > 0:
             freed = round(trim_shares * n["current_price"], 2)
             stcg = round(trim_shares * (n["current_price"] - n["average_price"]), 2)
-            capital_cut_downs.append({
-                "stock_code": "NIPSIL",
-                "action_type": "PARTIAL_TRIM",
-                "current_shares": int(n["quantity"]),
-                "shares_to_sell": trim_shares,
-                "remaining_shares": int(n["quantity"]) - trim_shares,
-                "current_price": n["current_price"],
-                "freed_rupees": freed,
-                "realized_stcg": stcg,
-                "realized_stcl": 0.0,
-                "target_weight_pct": 5.0,
-                "rationale": "Precious metals overweight (10.2% -> 5.0%), Stage 4 slope (-0.0202) & zero dividend yield."
-            })
+            capital_cut_downs.append(
+                {
+                    "stock_code": "NIPSIL",
+                    "action_type": "PARTIAL_TRIM",
+                    "current_shares": int(n["quantity"]),
+                    "shares_to_sell": trim_shares,
+                    "remaining_shares": int(n["quantity"]) - trim_shares,
+                    "current_price": n["current_price"],
+                    "freed_rupees": freed,
+                    "realized_stcg": stcg,
+                    "realized_stcl": 0.0,
+                    "target_weight_pct": 5.0,
+                    "rationale": "Precious metals overweight (10.2% -> 5.0%), Stage 4 slope (-0.0202) & zero dividend yield.",
+                }
+            )
 
     # PSUBAN calculation
     if "PSUBAN" in holdings_dict:
@@ -416,19 +418,21 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
         sell_shares = int(p["quantity"])
         freed = round(sell_shares * p["current_price"], 2)
         stcg = round(sell_shares * (p["current_price"] - p["average_price"]), 2)
-        capital_cut_downs.append({
-            "stock_code": "PSUBAN",
-            "action_type": "FULL_EXIT",
-            "current_shares": sell_shares,
-            "shares_to_sell": sell_shares,
-            "remaining_shares": 0,
-            "current_price": p["current_price"],
-            "freed_rupees": freed,
-            "realized_stcg": max(0.0, stcg),
-            "realized_stcl": abs(min(0.0, stcg)),
-            "target_weight_pct": 0.0,
-            "rationale": "Full exit. Stage 4 structural decline (slope -0.0200). Encashes capital for Stage 1/2 leaders."
-        })
+        capital_cut_downs.append(
+            {
+                "stock_code": "PSUBAN",
+                "action_type": "FULL_EXIT",
+                "current_shares": sell_shares,
+                "shares_to_sell": sell_shares,
+                "remaining_shares": 0,
+                "current_price": p["current_price"],
+                "freed_rupees": freed,
+                "realized_stcg": max(0.0, stcg),
+                "realized_stcl": abs(min(0.0, stcg)),
+                "target_weight_pct": 0.0,
+                "rationale": "Full exit. Stage 4 structural decline (slope -0.0200). Encashes capital for Stage 1/2 leaders.",
+            }
+        )
 
     # CANBAN calculation (also listed in loss harvest)
     if "CANBAN" in holdings_dict:
@@ -436,37 +440,41 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
         sell_shares = int(c["quantity"])
         freed = round(sell_shares * c["current_price"], 2)
         pnl_realized = round(sell_shares * (c["current_price"] - c["average_price"]), 2)
-        capital_cut_downs.append({
-            "stock_code": "CANBAN",
-            "action_type": "FULL_EXIT",
-            "current_shares": sell_shares,
-            "shares_to_sell": sell_shares,
-            "remaining_shares": 0,
-            "current_price": c["current_price"],
-            "freed_rupees": freed,
-            "realized_stcg": max(0.0, pnl_realized),
-            "realized_stcl": abs(min(0.0, pnl_realized)),
-            "target_weight_pct": 0.0,
-            "rationale": "Full exit. Stage 4 banking decay (slope -0.0290). Tax-loss harvest."
-        })
+        capital_cut_downs.append(
+            {
+                "stock_code": "CANBAN",
+                "action_type": "FULL_EXIT",
+                "current_shares": sell_shares,
+                "shares_to_sell": sell_shares,
+                "remaining_shares": 0,
+                "current_price": c["current_price"],
+                "freed_rupees": freed,
+                "realized_stcg": max(0.0, pnl_realized),
+                "realized_stcl": abs(min(0.0, pnl_realized)),
+                "target_weight_pct": 0.0,
+                "rationale": "Full exit. Stage 4 banking decay (slope -0.0290). Tax-loss harvest.",
+            }
+        )
 
     # Combine total cut downs including priority loss exits
     for item in harvested_losses:
         sc = item["stock_code"]
         if sc not in [x["stock_code"] for x in capital_cut_downs]:
-            capital_cut_downs.append({
-                "stock_code": sc,
-                "action_type": "FULL_EXIT_TAX_HARVEST",
-                "current_shares": item["shares_to_sell"],
-                "shares_to_sell": item["shares_to_sell"],
-                "remaining_shares": 0,
-                "current_price": item["current_price"],
-                "freed_rupees": item["freed_rupees"],
-                "realized_stcg": 0.0,
-                "realized_stcl": item["harvested_loss"],
-                "target_weight_pct": 0.0,
-                "rationale": item["reason"]
-            })
+            capital_cut_downs.append(
+                {
+                    "stock_code": sc,
+                    "action_type": "FULL_EXIT_TAX_HARVEST",
+                    "current_shares": item["shares_to_sell"],
+                    "shares_to_sell": item["shares_to_sell"],
+                    "remaining_shares": 0,
+                    "current_price": item["current_price"],
+                    "freed_rupees": item["freed_rupees"],
+                    "realized_stcg": 0.0,
+                    "realized_stcl": item["harvested_loss"],
+                    "target_weight_pct": 0.0,
+                    "rationale": item["reason"],
+                }
+            )
 
     # Calculate net capital freed and net tax match
     total_freed_capital = sum(c["freed_rupees"] for c in capital_cut_downs)
@@ -506,19 +514,21 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
             yield_pct = 4.0 if "POWINF" in sc else (7.0 if "EMBOFF" in sc else (6.8 if "NEXSEL" in sc else 0.5))
             annual_div_boost = round(order_rupees * (yield_pct / 100.0), 2)
 
-            reinvestment_orders.append({
-                "stock_code": sc,
-                "current_shares": int(h["quantity"]),
-                "recommended_buy_shares": buy_shares,
-                "projected_total_shares": int(h["quantity"]) + buy_shares,
-                "current_price": cur_price,
-                "rupee_amount": order_rupees,
-                "stage": h["stage"],
-                "slope": h["slope"],
-                "est_yield_pct": yield_pct,
-                "projected_annual_dividend_boost": annual_div_boost,
-                "rationale": f"Stage {h['stage']} accumulation leader (slope {h['slope']}). High-cashflow yield ballast."
-            })
+            reinvestment_orders.append(
+                {
+                    "stock_code": sc,
+                    "current_shares": int(h["quantity"]),
+                    "recommended_buy_shares": buy_shares,
+                    "projected_total_shares": int(h["quantity"]) + buy_shares,
+                    "current_price": cur_price,
+                    "rupee_amount": order_rupees,
+                    "stage": h["stage"],
+                    "slope": h["slope"],
+                    "est_yield_pct": yield_pct,
+                    "projected_annual_dividend_boost": annual_div_boost,
+                    "rationale": f"Stage {h['stage']} accumulation leader (slope {h['slope']}). High-cashflow yield ballast.",
+                }
+            )
 
     cash_buffer_retained = round(total_freed_capital - total_reinvested_rupees, 2)
 
@@ -533,7 +543,9 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
             "profitable_count": len(gains_list),
             "loss_making_count": len(losses_list),
             "neutral_count": len(neutral_list),
-            "concentration_top5_pct": round(sum(r["cur_val"] for r in rows[:5]) / current_market_value * 100.0, 2) if current_market_value else 0.0,
+            "concentration_top5_pct": round(sum(r["cur_val"] for r in rows[:5]) / current_market_value * 100.0, 2)
+            if current_market_value
+            else 0.0,
         },
         "stage_breakdown": stage_breakdown,
         "algorithmic_triggers": {
@@ -557,9 +569,12 @@ def extract_portfolio_rebalancer_data(db_path: str) -> Dict[str, Any]:
             "reinvestment_orders": reinvestment_orders,
             "total_reinvested_rupees": round(total_reinvested_rupees, 2),
             "cash_buffer_retained": cash_buffer_retained,
-            "total_annual_dividend_boost": round(sum(o["projected_annual_dividend_boost"] for o in reinvestment_orders), 2),
+            "total_annual_dividend_boost": round(
+                sum(o["projected_annual_dividend_boost"] for o in reinvestment_orders), 2
+            ),
         },
-        "top_holdings": [holdings_dict[r["stock_code"]] for r in rows[:10]], "all_holdings": [holdings_dict[r["stock_code"]] for r in rows],
+        "top_holdings": [holdings_dict[r["stock_code"]] for r in rows[:10]],
+        "all_holdings": [holdings_dict[r["stock_code"]] for r in rows],
     }
 
 
@@ -574,31 +589,31 @@ You are the Chief Quantitative Strategist and Senior Risk Officer for PortfolioP
 Deliver a rigorous, institutional-grade Daily Rebalancing & Tax-Shield Executive Memo based on the following verified ledger data:
 
 CURRENT PORTFOLIO STATE:
-- Invested Capital: ₹{summary['total_invested']:,.2f}
-- Current Market Value: ₹{summary['current_market_value']:,.2f}
-- Unrealized PnL: ₹{summary['total_pnl']:,.2f} ({summary['total_pnl_pct']:.2f}%)
-- Holdings Count: {summary['holdings_count']} (Profitable: {summary['profitable_count']}, Loss: {summary['loss_making_count']})
-- Top 5 Concentration: {summary['concentration_top5_pct']}%
+- Invested Capital: ₹{summary["total_invested"]:,.2f}
+- Current Market Value: ₹{summary["current_market_value"]:,.2f}
+- Unrealized PnL: ₹{summary["total_pnl"]:,.2f} ({summary["total_pnl_pct"]:.2f}%)
+- Holdings Count: {summary["holdings_count"]} (Profitable: {summary["profitable_count"]}, Loss: {summary["loss_making_count"]})
+- Top 5 Concentration: {summary["concentration_top5_pct"]}%
 
 STAGE BREAKDOWN (Weinstein 150-SMA):
-{json.dumps(data['stage_breakdown'], indent=2)}
+{json.dumps(data["stage_breakdown"], indent=2)}
 
 ALGORITHMIC TRIGGERS:
-- Chandelier Stop Breaches: {len(data['algorithmic_triggers']['chandelier_exit_breaches'])} positions
-- Stage 4 Structural Declines: {len(data['algorithmic_triggers']['stage_4_declines'])} positions
-- Distribution Warnings: {len(data['algorithmic_triggers']['distribution_warnings'])} positions
+- Chandelier Stop Breaches: {len(data["algorithmic_triggers"]["chandelier_exit_breaches"])} positions
+- Stage 4 Structural Declines: {len(data["algorithmic_triggers"]["stage_4_declines"])} positions
+- Distribution Warnings: {len(data["algorithmic_triggers"]["distribution_warnings"])} positions
 
 TAX OPTIMIZATION & REBALANCING MATRIX:
-- Gross Liquidity Unlocked from Cuts: ₹{tax_ledger['total_freed_capital']:,.2f}
-- Realized STCG from Trims: ₹{matrix['total_realized_stcg']:,.2f}
-- Realized STCL from Loss Harvest (SUZENE, XCHSOL, SWILIM, CANBAN, etc.): ₹{matrix['total_realized_stcl_shield']:,.2f}
-- Net Taxable Capital Gain: ₹{matrix['net_taxable_capital_gain']:,.2f} (Direct Tax Saved: ₹{matrix['direct_cash_tax_shield_saved']:,.2f})
-- Excess Loss Shield Carryforward: ₹{matrix['excess_loss_carryforward']:,.2f}
+- Gross Liquidity Unlocked from Cuts: ₹{tax_ledger["total_freed_capital"]:,.2f}
+- Realized STCG from Trims: ₹{matrix["total_realized_stcg"]:,.2f}
+- Realized STCL from Loss Harvest (SUZENE, XCHSOL, SWILIM, CANBAN, etc.): ₹{matrix["total_realized_stcl_shield"]:,.2f}
+- Net Taxable Capital Gain: ₹{matrix["net_taxable_capital_gain"]:,.2f} (Direct Tax Saved: ₹{matrix["direct_cash_tax_shield_saved"]:,.2f})
+- Excess Loss Shield Carryforward: ₹{matrix["excess_loss_carryforward"]:,.2f}
 
 EXACT CAPITAL REDEPLOYMENT ORDERS (Stage 1/2 Leaders):
-{json.dumps(tax_ledger['reinvestment_orders'], indent=2)}
-- Cash Buffer Retained for Corrections: ₹{tax_ledger['cash_buffer_retained']:,.2f}
-- Estimated Incremental Annual Dividend Boost: +₹{tax_ledger['total_annual_dividend_boost']:,.2f}/yr
+{json.dumps(tax_ledger["reinvestment_orders"], indent=2)}
+- Cash Buffer Retained for Corrections: ₹{tax_ledger["cash_buffer_retained"]:,.2f}
+- Estimated Incremental Annual Dividend Boost: +₹{tax_ledger["total_annual_dividend_boost"]:,.2f}/yr
 
 Provide your assessment structured in these mandatory sections:
 1. **Executive Rebalancing Summary & Guardrail Rectification**:
@@ -619,22 +634,31 @@ Provide your assessment structured in these mandatory sections:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Daily Quantitative Portfolio Rebalancer & Tax Harvest Engine"
-    )
+    parser = argparse.ArgumentParser(description="Daily Quantitative Portfolio Rebalancer & Tax Harvest Engine")
     parser.add_argument("--db", default=None, help="Path to SQLite database")
-    parser.add_argument("--dry-run", action="store_true", help="Output raw metrics JSON and tax ledger without calling LLM")
-    parser.add_argument("--edge-audit", dest="edge_audit", action="store_true", default=True, help="Run 2-ticker chunked edge auditor (pralabs:edge)")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Output raw metrics JSON and tax ledger without calling LLM"
+    )
+    parser.add_argument(
+        "--edge-audit",
+        dest="edge_audit",
+        action="store_true",
+        default=True,
+        help="Run 2-ticker chunked edge auditor (pralabs:edge)",
+    )
     parser.add_argument("--no-edge-audit", dest="edge_audit", action="store_false", help="Skip edge auditor")
-    parser.add_argument("--ai", dest="ai", action="store_true", default=True, help="Run AI quantitative analysis (default True)")
+    parser.add_argument(
+        "--ai", dest="ai", action="store_true", default=True, help="Run AI quantitative analysis (default True)"
+    )
     parser.add_argument("--no-ai", dest="ai", action="store_false", help="Skip AI analysis")
-    parser.add_argument("--telegram", action="store_true", help="Broadcast generated memo to Telegram owners via urllib")
+    parser.add_argument(
+        "--telegram", action="store_true", help="Broadcast generated memo to Telegram owners via urllib"
+    )
     parser.add_argument("--ollama-url", default=resolve_ollama_endpoint(), help="Primary Ollama base URL")
     parser.add_argument("--model", default=resolve_ollama_model(), help="Primary Ollama model name")
     parser.add_argument("--fallback-url", default=resolve_fallback_endpoint(), help="Fallback Ollama base URL")
     parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     args = parser.parse_args()
-
 
     db_path = resolve_db_path(args.db)
     rebalancer_data = extract_portfolio_rebalancer_data(db_path)
@@ -651,17 +675,21 @@ def main():
 
     net_tax_liability = matrix.get("tax_liability_after_harvest", 0.0)
     print("=" * 80)
-    print(f" PORTFOLIOPi DAILY QUANTITATIVE REBALANCER & TAX HARVEST ENGINE")
+    print(" PORTFOLIOPi DAILY QUANTITATIVE REBALANCER & TAX HARVEST ENGINE")
     print(f" Database: {db_path} | Time: {rebalancer_data['timestamp']}")
     print("=" * 80)
     print(f" Total Invested : Rs. {summary['total_invested']:>12,.2f}  |  Holdings Count : {summary['holdings_count']}")
-    print(f" Current Value  : Rs. {summary['current_market_value']:>12,.2f}  |  Win/Loss Ratio : {summary['profitable_count']}/{summary['loss_making_count']}")
+    print(
+        f" Current Value  : Rs. {summary['current_market_value']:>12,.2f}  |  Win/Loss Ratio : {summary['profitable_count']}/{summary['loss_making_count']}"
+    )
     print(f" Unrealized PnL : Rs. {summary['total_pnl']:>12,.2f} ({summary['total_pnl_pct']:+.2f}%)")
     print("-" * 80)
     print(f" [TAX SHIELD] Gross Freed Liquidity : Rs. {ledger['total_freed_capital']:,.2f}")
     print(f" [TAX SHIELD] Harvested STCL Losses : Rs. {matrix['total_realized_stcl_shield']:,.2f}")
     print(f" [TAX SHIELD] Realized STCG Gains   : Rs. {matrix['total_realized_stcg']:,.2f}")
-    print(f" [TAX SHIELD] Net Tax Liability     : Rs. {net_tax_liability:,.2f} (Direct Tax Saved: Rs. {matrix['direct_cash_tax_shield_saved']:,.2f})")
+    print(
+        f" [TAX SHIELD] Net Tax Liability     : Rs. {net_tax_liability:,.2f} (Direct Tax Saved: Rs. {matrix['direct_cash_tax_shield_saved']:,.2f})"
+    )
     print(f" [TAX SHIELD] Dividend Boost Added  : +Rs. {ledger['total_annual_dividend_boost']:,.2f} / year")
     print("=" * 80 + "\n")
 
@@ -676,7 +704,9 @@ def main():
         )
         prompt = build_quantitative_memo_prompt(rebalancer_data)
 
-        print(f"[*] Querying LLM memo generator (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n")
+        print(
+            f"[*] Querying LLM memo generator (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n"
+        )
         generated_memo = query_llm_with_fallback(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -685,7 +715,7 @@ def main():
             fallback_url=args.fallback_url,
             fallback_model=args.fallback_model,
             temperature=0.2,
-            timeout=15.0
+            timeout=15.0,
         )
 
         print("\n" + "=" * 80)
@@ -706,29 +736,33 @@ def main():
                         stop = float(rat.split("Chandelier Exit (")[1].split(")")[0])
                     except Exception:
                         pass
-                formatted.append({
-                    "ticker": h.get("stock_code", h.get("ticker", "TKR")),
-                    "cmp": cmp,
-                    "stage": h.get("stage", h.get("weinstein_stage", 2)),
-                    "minervini_pass": 5,
-                    "minervini_total": 7,
-                    "rs_rating": int(h.get("composite_score") or 60),
-                    "stop_loss_price": stop,
-                    "pnl_pct": float(h.get("pnl_pct", h.get("unrealized_pnl_pct", 0.0))),
-                    "dist_days": 2,
-                    "asset_class": h.get("asset_class", "EQUITY")
-                })
-            
+                formatted.append(
+                    {
+                        "ticker": h.get("stock_code", h.get("ticker", "TKR")),
+                        "cmp": cmp,
+                        "stage": h.get("stage", h.get("weinstein_stage", 2)),
+                        "minervini_pass": 5,
+                        "minervini_total": 7,
+                        "rs_rating": int(h.get("composite_score") or 60),
+                        "stop_loss_price": stop,
+                        "pnl_pct": float(h.get("pnl_pct", h.get("unrealized_pnl_pct", 0.0))),
+                        "dist_days": 2,
+                        "asset_class": h.get("asset_class", "EQUITY"),
+                    }
+                )
+
             audit_lines = audit_holdings(formatted, chunk_size=2)
-            
+
             # Filter for non-HOLD actionable alerts
             for i in range(0, len(audit_lines), 2):
                 header_line = audit_lines[i]
-                detail_line = audit_lines[i+1] if i+1 < len(audit_lines) else ""
+                detail_line = audit_lines[i + 1] if i + 1 < len(audit_lines) else ""
                 if "ACT:HOLD" not in header_line:
                     edge_audit_alerts.append(f"{header_line}\n{detail_line}")
-                    
-            print(f"[✓] Edge audit completed: {len(edge_audit_alerts)} actionable alerts out of {len(formatted)} holdings.")
+
+            print(
+                f"[✓] Edge audit completed: {len(edge_audit_alerts)} actionable alerts out of {len(formatted)} holdings."
+            )
             if edge_audit_alerts:
                 print("--- Actionable Edge Alerts ---")
                 for alert in edge_audit_alerts:
@@ -749,7 +783,9 @@ def main():
             owner_ids = [x.strip() for x in owner_ids_str.split(",") if x.strip()]
             alert_section = ""
             if edge_audit_alerts:
-                alert_section = "\n🚨 *Actionable Edge Directives*:\n" + "\n\n".join([f"`{a}`" for a in edge_audit_alerts]) + "\n\n"
+                alert_section = (
+                    "\n🚨 *Actionable Edge Directives*:\n" + "\n\n".join([f"`{a}`" for a in edge_audit_alerts]) + "\n\n"
+                )
 
             header = (
                 f"📊 *PortfolioPi Daily Rebalancer & Tax Shield Report*\n"
@@ -758,7 +794,11 @@ def main():
                 f"• *Tax Shield Savings*: ₹{matrix['direct_cash_tax_shield_saved']:,.2f} (Net Tax: ₹{matrix['tax_liability_after_harvest']:,.2f})\n"
                 f"• *Dividend Boost*: +₹{ledger['total_annual_dividend_boost']:,.2f}/yr\n\n"
             )
-            broadcast_text = header + alert_section + (generated_memo if generated_memo else "AI memo skipped or generated in dry-run mode.")
+            broadcast_text = (
+                header
+                + alert_section
+                + (generated_memo if generated_memo else "AI memo skipped or generated in dry-run mode.")
+            )
             print(f"[*] Broadcasting rebalancer report to Telegram owner IDs: {owner_ids}...")
             results = send_telegram_broadcast(bot_token, owner_ids, broadcast_text)
             for cid, success, err in results:

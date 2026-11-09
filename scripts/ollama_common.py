@@ -15,7 +15,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 def resolve_db_path(cli_path: Optional[str] = None) -> str:
@@ -76,6 +76,7 @@ def get_db_connection(db_path: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     try:
         from core.database import configure_sqlite3_connection
+
         configure_sqlite3_connection(conn)
     except Exception:
         cur = conn.cursor()

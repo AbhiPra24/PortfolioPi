@@ -1,10 +1,11 @@
 import re
 from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from core.ai_analyst import (
-    build_compressed_telemetry,
     build_compressed_prompt,
+    build_compressed_telemetry,
     generate_ai_analysis,
     generate_batch_ai_analysis,
 )
@@ -78,19 +79,19 @@ Your mandate is to MAXIMIZE long-term portfolio growth while strictly protecting
 
 [STOCK TELEMETRY]
 Symbol: {ticker}
-Current Price: ₹{metrics.get('price')}
-Weinstein Stage: Stage {metrics.get('stage')}
-Minervini Trend Checklist: {metrics.get('tt_score')}/7 criteria passing
-Relative Strength vs Nifty 50: {metrics.get('rs_score')}
-Volume Ratio: {metrics.get('vol_ratio')}x (20-day average)
-Institutional Distribution Days: {metrics.get('dist_days')}
-Chandelier Trailing Stop: ₹{metrics.get('stop_loss')}
-RSI(14): {metrics.get('rsi14')} | MACD: {metrics.get('macd')}
-Algorithmic Verdict: {metrics.get('action')}
+Current Price: ₹{metrics.get("price")}
+Weinstein Stage: Stage {metrics.get("stage")}
+Minervini Trend Checklist: {metrics.get("tt_score")}/7 criteria passing
+Relative Strength vs Nifty 50: {metrics.get("rs_score")}
+Volume Ratio: {metrics.get("vol_ratio")}x (20-day average)
+Institutional Distribution Days: {metrics.get("dist_days")}
+Chandelier Trailing Stop: ₹{metrics.get("stop_loss")}
+RSI(14): {metrics.get("rsi14")} | MACD: {metrics.get("macd")}
+Algorithmic Verdict: {metrics.get("action")}
 
 [PORTFOLIO CONTEXT]
-Position: {'HELD' if ctx.get('is_holding') else 'WATCHLIST ONLY'}
-Unrealized PnL: {ctx.get('pnl_pct'):+.1f}%
+Position: {"HELD" if ctx.get("is_holding") else "WATCHLIST ONLY"}
+Unrealized PnL: {ctx.get("pnl_pct"):+.1f}%
 
 [INSTRUCTIONS]
 Provide a crisp, professional 3-bullet assessment for Telegram:
@@ -113,7 +114,9 @@ Keep formatting clean using Telegram HTML tags (<b>, <i>, <code>). Do not invent
     token_savings_pct = (1.0 - (compressed_words / verbose_words)) * 100.0
     char_savings_pct = (1.0 - (compressed_len / verbose_len)) * 100.0
 
-    print(f"\nVerbose Words: {verbose_words} | Compressed Words: {compressed_words} | Word Savings: {token_savings_pct:.1f}%")
+    print(
+        f"\nVerbose Words: {verbose_words} | Compressed Words: {compressed_words} | Word Savings: {token_savings_pct:.1f}%"
+    )
     print(f"Verbose Chars: {verbose_len} | Compressed Chars: {compressed_len} | Char Savings: {char_savings_pct:.1f}%")
 
     # Assert > 60% reduction
@@ -168,10 +171,12 @@ async def test_generate_ai_analysis_passes_parameters():
 
 @pytest.mark.anyio
 async def test_micro_batch_max_2_tickers():
-    mock_post = AsyncMock(side_effect=[
-        "BHEL | STG:2 | STOP:-0.5% | ACT:EXIT_STOP\n- Stop breached.\nTCS | STG:2 | STOP:+5.0% | ACT:HOLD\n- Steady holding.",
-        "INFY | STG:1 | STOP:+2.0% | ACT:ACCUMULATE\n- Base breakout.",
-    ])
+    mock_post = AsyncMock(
+        side_effect=[
+            "BHEL | STG:2 | STOP:-0.5% | ACT:EXIT_STOP\n- Stop breached.\nTCS | STG:2 | STOP:+5.0% | ACT:HOLD\n- Steady holding.",
+            "INFY | STG:1 | STOP:+2.0% | ACT:ACCUMULATE\n- Base breakout.",
+        ]
+    )
     with patch("core.ai_analyst._post_ollama", mock_post):
         items = [
             {"ticker": "BHEL", "metrics": {"price": 248.75, "stop_loss": 250.0, "stage": 2}},

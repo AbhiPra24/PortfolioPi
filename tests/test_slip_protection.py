@@ -10,13 +10,12 @@ Verifies:
 - Integration with `create_rebalance_execution_payload`.
 """
 
-import pytest
 from algo.order_payloads import (
     BasketOrder,
     apply_slip_protection,
     compute_buffered_price,
-    create_slip_protected_basket_order,
     create_rebalance_execution_payload,
+    create_slip_protected_basket_order,
     generate_trade_racer_csv,
     is_instrument_illiquid,
     parse_trade_racer_csv,
@@ -127,7 +126,7 @@ class TestSlipProtection:
 
         custom_buffers = {
             "PGINVIT": 0.005,  # 0.5%
-            "BIRET": 0.008,    # 0.8%
+            "BIRET": 0.008,  # 0.8%
         }
 
         protected = apply_slip_protection(orders, buffer_pct=0.003, asset_buffers=custom_buffers)

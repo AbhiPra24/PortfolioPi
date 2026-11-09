@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 from app_config import settings
@@ -78,9 +78,13 @@ class DualEngineRouter:
         probe_timeout_ms: int = 800,
         cooldown_seconds: float = 30.0,
     ):
-        self.primary_url = (primary_url or getattr(settings, "ollama_base_url", "http://host.docker.internal:11434")).rstrip("/")
+        self.primary_url = (
+            primary_url or getattr(settings, "ollama_base_url", "http://host.docker.internal:11434")
+        ).rstrip("/")
         self.primary_model = primary_model or getattr(settings, "ollama_model", "pralabs:latest")
-        self.edge_url = (edge_url or getattr(settings, "ollama_fallback_url", "http://host.docker.internal:11434")).rstrip("/")
+        self.edge_url = (
+            edge_url or getattr(settings, "ollama_fallback_url", "http://host.docker.internal:11434")
+        ).rstrip("/")
         self.edge_model = edge_model or getattr(settings, "ollama_fallback_model", "pralabs:edge")
         self.probe_timeout_ms = probe_timeout_ms
         self.cooldown_seconds = cooldown_seconds
@@ -125,7 +129,10 @@ class DualEngineRouter:
             if self._state != CircuitState.PRIMARY:
                 logger.info(
                     "Primary local engine %s:%d responded healthy (<%dms). Circuit RESET -> PRIMARY (%s)",
-                    host, port, self.probe_timeout_ms, self.primary_model,
+                    host,
+                    port,
+                    self.probe_timeout_ms,
+                    self.primary_model,
                 )
             self._state = CircuitState.PRIMARY
             self._consecutive_failures = 0
@@ -134,7 +141,10 @@ class DualEngineRouter:
             if self._state != CircuitState.EDGE:
                 logger.warning(
                     "Primary local engine %s:%d failed health check (>%dms/unreachable). Circuit TRIPPED -> EDGE (%s)",
-                    host, port, self.probe_timeout_ms, self.edge_model,
+                    host,
+                    port,
+                    self.probe_timeout_ms,
+                    self.edge_model,
                 )
             self._state = CircuitState.EDGE
             self._last_state_change = now

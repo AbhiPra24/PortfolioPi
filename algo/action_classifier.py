@@ -1,6 +1,7 @@
 """Synthesizes structural algorithms into actionable portfolio guidance."""
 
 from typing import Any, Dict, List, Optional
+
 import pandas as pd
 
 from algo.distribution_days import count_distribution_days
@@ -109,7 +110,9 @@ def get_stock_action(
                 rationale.append(f"Liquidity/Spread guardrail failed: {liquidity_rationale}.")
             else:
                 action = "BUY MORE / CONTINUE SIP"
-                rationale.append(f"Strong Stage 2 uptrend with RS {rs_score:.2f} and {tt_score}/7 trend criteria. Consider buying.")
+                rationale.append(
+                    f"Strong Stage 2 uptrend with RS {rs_score:.2f} and {tt_score}/7 trend criteria. Consider buying."
+                )
         else:
             action = "HOLD"
             rationale.append("Not a buy setup right now.")

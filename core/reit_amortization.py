@@ -17,10 +17,11 @@ an audit trail in `roc_amortization_log`.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime
-import logging
-from typing import Any, Dict, List, Optional
+from typing import Optional
+
 import aiosqlite
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DistributionComponents:
     """Distribution breakdown for REIT/InvIT corporate action."""
+
     stock_code: str
     ex_date: str  # YYYY-MM-DD
     dividend_amount: float = 0.0
@@ -44,6 +46,7 @@ class DistributionComponents:
 @dataclass
 class RocAmortizationResult:
     """Outcome of applying ROC amortization."""
+
     stock_code: str
     ex_date: str
     roc_per_unit: float
@@ -100,7 +103,7 @@ async def ensure_reit_tables(db: aiosqlite.Connection) -> None:
         "roc_amount REAL DEFAULT 0.0",
         "ex_date TEXT",
     ]:
-        col_name = col_def.split()[0]
+        col_def.split()[0]
         try:
             await db.execute(f"ALTER TABLE dividend_schedule ADD COLUMN {col_def};")
         except Exception:

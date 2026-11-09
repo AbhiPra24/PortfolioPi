@@ -1,12 +1,8 @@
 """Unit tests for Automated FIFO Tax-Loss Harvest Pairing and Trade Racer Basket generation."""
 
-from datetime import date
-import pytest
-
 from algo.order_payloads import parse_trade_racer_csv
 from algo.tax_lots import evaluate_tax_hurdle_rule
 from algo.tax_pairing import (
-    HarvestPairingItem,
     HarvestPairingResult,
     pair_tax_loss_harvest,
 )
@@ -131,7 +127,10 @@ def test_trade_racer_csv_payload_generation():
 
     # 10 shares of TCS (gain exit) + 100 shares of SWILIM (loss harvest)
     assert len(result.orders) == 2
-    assert "Exchange,StockCode,Action,OrderType,Validity,Quantity,Price,DisclosedQuantity,TriggerPrice" in result.trade_racer_csv
+    assert (
+        "Exchange,StockCode,Action,OrderType,Validity,Quantity,Price,DisclosedQuantity,TriggerPrice"
+        in result.trade_racer_csv
+    )
 
     parsed_orders = parse_trade_racer_csv(result.trade_racer_csv)
     assert len(parsed_orders) == 2

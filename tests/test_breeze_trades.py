@@ -1,6 +1,7 @@
 """Unit and integration tests for Breeze trades parsing and performance analytics."""
 
 import pytest
+
 from scripts.analyse_trade_performance import (
     calculate_trade_metrics,
     format_trades_summary_header,

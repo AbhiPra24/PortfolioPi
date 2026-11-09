@@ -10,10 +10,10 @@ Under Section 70 and Section 111A of the Indian Income Tax Act:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
-import math
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from algo.order_payloads import BasketOrder, generate_trade_racer_csv, generate_upi_deep_link
 
@@ -21,6 +21,7 @@ from algo.order_payloads import BasketOrder, generate_trade_racer_csv, generate_
 @dataclass
 class HarvestPairingItem:
     """Represents a matched loss lot harvested to offset a gain."""
+
     stock_code: str
     lot_id: str
     shares_to_sell: int
@@ -33,6 +34,7 @@ class HarvestPairingItem:
 @dataclass
 class HarvestPairingResult:
     """Structured result of tax-loss harvest pairing for an STCG trigger."""
+
     gain_stock_code: str
     gain_lot_id: str
     gain_shares_sold: int
@@ -127,18 +129,20 @@ def pair_tax_loss_harvest(
 
         if cand_loss_per_share > 1e-4:
             stg = stage_map.get(cand_code, 4 if cand_code in {"SWILIM", "XCHSOL", "CANBAN"} else 0)
-            loss_candidates.append({
-                "lot": cand,
-                "stock_code": cand_code,
-                "lot_id": cand_lot_id or f"{cand_code}_LOT",
-                "available_qty": cand_qty,
-                "buy_price": cand_buy,
-                "current_price": cand_cmp,
-                "loss_per_share": cand_loss_per_share,
-                "total_lot_loss": cand_loss_per_share * cand_qty,
-                "stage": stg,
-                "tax_category": cand.get("tax_category", "STCG"),
-            })
+            loss_candidates.append(
+                {
+                    "lot": cand,
+                    "stock_code": cand_code,
+                    "lot_id": cand_lot_id or f"{cand_code}_LOT",
+                    "available_qty": cand_qty,
+                    "buy_price": cand_buy,
+                    "current_price": cand_cmp,
+                    "loss_per_share": cand_loss_per_share,
+                    "total_lot_loss": cand_loss_per_share * cand_qty,
+                    "stage": stg,
+                    "tax_category": cand.get("tax_category", "STCG"),
+                }
+            )
 
     # Priority sorting:
     # 1. Stage 4 positions first (descending priority for stage == 4)
@@ -228,7 +232,9 @@ def pair_tax_loss_harvest(
     upi_link = None
     if upi_payee_vpa and upi_payee_name:
         # Total proceeds expected from both gain and loss sales
-        total_proceeds = round((gain_shares * gain_cmp) + sum(h.shares_to_sell * h.current_price for h in harvested_items), 2)
+        total_proceeds = round(
+            (gain_shares * gain_cmp) + sum(h.shares_to_sell * h.current_price for h in harvested_items), 2
+        )
         upi_link = generate_upi_deep_link(
             payee_vpa=upi_payee_vpa,
             payee_name=upi_payee_name,
@@ -265,6 +271,7 @@ def pair_tax_loss_harvest(
 @dataclass
 class Section112AHarvestItem:
     """Represents a lot harvested and cost-basis reset under Section 112A."""
+
     stock_code: str
     lot_id: str
     shares: int
@@ -278,6 +285,7 @@ class Section112AHarvestItem:
 @dataclass
 class Section112AHarvestResult:
     """Structured result of Section 112A tax-gain harvest and cost-basis reset."""
+
     total_ltcg_harvested: float = 0.0
     total_tax_saved: float = 0.0  # @ 12.5%
     available_exemption_remaining: float = 125000.0
@@ -360,6 +368,7 @@ def plan_section_112a_harvest_reset(
             buy_d = lot.get("buy_date")
             if buy_d:
                 from algo.tax_lots import _parse_date
+
                 parsed_d = _parse_date(buy_d)
                 if parsed_d:
                     holding_days = (as_of_date - parsed_d).days
@@ -379,17 +388,19 @@ def plan_section_112a_harvest_reset(
         unrealized_gain = round(gain_per_share * qty, 2)
         gain_pct = (gain_per_share / buy_price) if buy_price > 0 else 0.0
 
-        candidates.append({
-            "lot": lot,
-            "stock_code": code,
-            "lot_id": str(lot.get("lot_id") or f"{code}_LOT"),
-            "quantity": qty,
-            "buy_price": buy_price,
-            "cmp": cmp_val,
-            "gain_per_share": gain_per_share,
-            "unrealized_gain": unrealized_gain,
-            "gain_pct": gain_pct,
-        })
+        candidates.append(
+            {
+                "lot": lot,
+                "stock_code": code,
+                "lot_id": str(lot.get("lot_id") or f"{code}_LOT"),
+                "quantity": qty,
+                "buy_price": buy_price,
+                "cmp": cmp_val,
+                "gain_per_share": gain_per_share,
+                "unrealized_gain": unrealized_gain,
+                "gain_pct": gain_pct,
+            }
+        )
 
     # Sort by highest unrealized gain % or highest dollar gain (prefer highest dollar gain, then highest gain %)
     candidates.sort(key=lambda c: (-c["unrealized_gain"], -c["gain_pct"]))

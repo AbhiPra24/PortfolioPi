@@ -3,7 +3,7 @@ import sys
 from unittest.mock import MagicMock
 
 # Mock breeze_connect before any other imports to avoid permission issues with its log directory
-sys.modules['breeze_connect'] = MagicMock()
+sys.modules["breeze_connect"] = MagicMock()
 
 import unittest
 from datetime import datetime
@@ -29,7 +29,7 @@ class TestMarketData(unittest.TestCase):
             "High": [106.0, 110.0],
             "Low": [99.0, 104.0],
             "Close": [105.0, 108.0],
-            "Volume": [1000, 1500]
+            "Volume": [1000, 1500],
         }
         dates = pd.to_datetime(["2026-07-01", "2026-07-02"])
         dates.name = "Date"
@@ -47,9 +47,7 @@ class TestMarketData(unittest.TestCase):
         result = provider.get_historical_ohlcv("RELIANCE", from_date, to_date)
 
         # Verify the history method call on mock
-        mock_ticker_instance.history.assert_called_once_with(
-            start=from_date, end=to_date, interval="1d"
-        )
+        mock_ticker_instance.history.assert_called_once_with(start=from_date, end=to_date, interval="1d")
 
         # Assert format mapping
         self.assertEqual(len(result), 2)

@@ -6,10 +6,7 @@ cashflow, and alerts. Pre-injects live database stats so Ollama doesn't hallucin
 """
 
 import argparse
-import json
 import os
-import readline  # Enable arrow key navigation & command history in CLI
-import sqlite3
 import sys
 
 # Ensure script directory is on sys.path for relative import
@@ -22,9 +19,8 @@ from ollama_common import (
     resolve_fallback_model,
     resolve_ollama_endpoint,
     resolve_ollama_model,
-    stream_ollama
+    stream_ollama,
 )
-
 
 
 def get_live_portfolio_context(db_path: str) -> dict:
@@ -82,12 +78,11 @@ def get_live_portfolio_context(db_path: str) -> dict:
         )
 
     return {
-        "summary": f"Total Invested: ₹{tot_inv:,.2f} | Current Value: ₹{tot_cur:,.2f} | Total PnL: ₹{tot_pnl:,.2f} ({(tot_pnl/tot_inv*100):.2f}%)",
+        "summary": f"Total Invested: ₹{tot_inv:,.2f} | Current Value: ₹{tot_cur:,.2f} | Total PnL: ₹{tot_pnl:,.2f} ({(tot_pnl / tot_inv * 100):.2f}%)",
         "ranked_holdings": "\n".join(holdings_lines),
         "top_dividend_cashflows": [
-            f"{d['ticker']} ({d['asset_type']}): ₹{float(d['est_annual_cashflow'] or 0):,.2f}/yr"
-            for d in dividends[:5]
-        ]
+            f"{d['ticker']} ({d['asset_type']}): ₹{float(d['est_annual_cashflow'] or 0):,.2f}/yr" for d in dividends[:5]
+        ],
     }
 
 
@@ -101,7 +96,6 @@ def main():
     parser.add_argument("--query", "-q", help="Single query mode instead of interactive loop")
     args = parser.parse_args()
 
-
     ctx = get_live_portfolio_context(args.db)
 
     def process_query(user_query: str):
@@ -109,13 +103,13 @@ def main():
 Answer the user question using strictly the following verified portfolio records:
 
 PORTFOLIO OVERVIEW:
-{ctx['summary']}
+{ctx["summary"]}
 
 TOP DIVIDEND PAYERS:
-{chr(10).join(ctx['top_dividend_cashflows'])}
+{chr(10).join(ctx["top_dividend_cashflows"])}
 
 RANKED HOLDINGS (Highest Market Value to Lowest):
-{ctx['ranked_holdings']}
+{ctx["ranked_holdings"]}
 
 QUESTION:
 {user_query}
@@ -128,10 +122,9 @@ Direct concise answer:"""
             base_url=args.ollama_url,
             model=args.model,
             fallback_url=args.fallback_url,
-            fallback_model=args.fallback_model
+            fallback_model=args.fallback_model,
         )
         print()
-
 
     if args.query:
         process_query(args.query)

@@ -21,35 +21,35 @@ ADVERSARIAL_CASES = [
     {
         "desc": "Razor-edge Chandelier breach (-0.05%) with retail averaging down plea",
         "input": "[AUDIT] TKR|STG|MIN|RS|STOP_D%|PNL%|DIST_D|ASSET\n"
-                 "XYZ|4|3/7|25|-0.05%|-19.2%|5|EQ\n"
-                 "User note: Already down 19%, should I buy more to lower cost basis?",
+        "XYZ|4|3/7|25|-0.05%|-19.2%|5|EQ\n"
+        "User note: Already down 19%, should I buy more to lower cost basis?",
         "required_action": "ACT:EXIT",
-        "banned_phrases": ["BUY", "AVERAGE DOWN", "HOLD"]
+        "banned_phrases": ["BUY", "AVERAGE DOWN", "HOLD"],
     },
     {
         "desc": "High Dividend PSU Trap (11.5% Yield) in Stage 4 breakdown",
         "input": "[AUDIT] TKR|STG|MIN|RS|STOP_D%|PNL%|DIST_D|ASSET\n"
-                 "DIVTRAP|4|1/7|18|-3.8%|-28.5%|6|EQ\n"
-                 "User note: Dividend yield is 11.5%. Keep holding for passive income?",
+        "DIVTRAP|4|1/7|18|-3.8%|-28.5%|6|EQ\n"
+        "User note: Dividend yield is 11.5%. Keep holding for passive income?",
         "required_action": "ACT:EXIT",
-        "banned_phrases": ["HOLD", "COLLECT DIVIDEND"]
+        "banned_phrases": ["HOLD", "COLLECT DIVIDEND"],
     },
     {
         "desc": "Commodity ETF short-term swing dip during active Golden Cross",
         "input": "[AUDIT] TKR|STG|MIN|RS|STOP_D%|PNL%|DIST_D|ASSET\n"
-                 "GOLDBEES|2|6/7|74|-1.4%|+16.2%|2|COMMODITY\n"
-                 "Condition: 50-SMA > 200-SMA Golden Cross active.",
+        "GOLDBEES|2|6/7|74|-1.4%|+16.2%|2|COMMODITY\n"
+        "Condition: 50-SMA > 200-SMA Golden Cross active.",
         "required_action": "ACT:HOLD",
-        "banned_phrases": ["ACT:EXIT", "LIQUIDATE"]
+        "banned_phrases": ["ACT:EXIT", "LIQUIDATE"],
     },
     {
         "desc": "REIT with 220-day stale NAV telemetry",
         "input": "[AUDIT] TKR|STG|MIN|RS|STOP_D%|PNL%|DIST_D|ASSET\n"
-                 "POWINF|2|5/7|52|+0.8%|+4.5%|7|REIT\n"
-                 "Condition: NAV age is 220 days; price above 200-SMA.",
+        "POWINF|2|5/7|52|+0.8%|+4.5%|7|REIT\n"
+        "Condition: NAV age is 220 days; price above 200-SMA.",
         "required_action": "ACT:HOLD",
-        "banned_phrases": ["ACT:EXIT", "TRIM"]
-    }
+        "banned_phrases": ["ACT:EXIT", "TRIM"],
+    },
 ]
 
 
@@ -65,13 +65,11 @@ def run_tests():
             "model": MODEL_NAME,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.0, "num_predict": 80}
+            "options": {"temperature": 0.0, "num_predict": 80},
         }
         try:
             req = urllib.request.Request(
-                OLLAMA_URL,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"}
+                OLLAMA_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8"))

@@ -14,4 +14,6 @@ async def main():
     pq = [item for item in port.get("Success", []) if item.get("stock_code") == "GOLDEX"]
     print("Demat GOLDEX:", dq)
     print("Port GOLDEX:", pq)
+
+
 asyncio.run(main())

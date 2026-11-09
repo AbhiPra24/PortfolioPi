@@ -8,6 +8,7 @@ from app_config import settings
 class SessionExpiredError(Exception):
     pass
 
+
 class BreezeClient:
     def __init__(self, session_token: str):
         self.breeze = BreezeConnect(api_key=settings.api_key.get_secret_value())

@@ -11,4 +11,5 @@ async def main():
     await bot.set_my_commands(COMMANDS)
     print("Commands set!")
 
+
 asyncio.run(main())

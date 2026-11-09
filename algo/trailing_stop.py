@@ -1,6 +1,7 @@
 """Chandelier Exit risk-management stop-loss calculation with dual-factor volatility scaling."""
 
 from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 
@@ -95,9 +96,7 @@ def calculate_chandelier_exit(
 
     # Base k_stage resolution
     asset_upper = str(asset_class).upper().strip()
-    is_commodity_or_reit = any(
-        term in asset_upper for term in ["COMMODITY", "GOLD", "REIT", "SILVER"]
-    )
+    is_commodity_or_reit = any(term in asset_upper for term in ["COMMODITY", "GOLD", "REIT", "SILVER"])
 
     if is_commodity_or_reit:
         k_stage = 3.5

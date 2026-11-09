@@ -1,9 +1,9 @@
 """Unit tests for operational guardrails in multi-source market data fallback pipeline."""
 
-from datetime import date, datetime
 import unittest.mock as mock
+from datetime import date
+
 import pandas as pd
-import pytest
 
 from core.market_data_fallback import (
     KNOWN_NSE_HOLIDAYS,
@@ -24,22 +24,24 @@ from core.market_data_fallback import (
 # ===========================================================================
 def test_parse_bhavcopy_udiff_format():
     """Verify parsing of modern NSE UDiFF bhavcopy structure."""
-    df_udiff = pd.DataFrame([
-        {
-            "TradDt": "2026-11-06",
-            "TckrSymb": "FEDERALBNK",
-            "SctySrs": "EQ",
-            "ClsPric": 340.10,
-            "TtlTradgVol": 1250000,
-        },
-        {
-            "TradDt": "2026-11-06",
-            "TckrSymb": "PGINVIT",
-            "SctySrs": "IV",
-            "ClsPric": 105.38,
-            "TtlTradgVol": 45000,
-        },
-    ])
+    df_udiff = pd.DataFrame(
+        [
+            {
+                "TradDt": "2026-11-06",
+                "TckrSymb": "FEDERALBNK",
+                "SctySrs": "EQ",
+                "ClsPric": 340.10,
+                "TtlTradgVol": 1250000,
+            },
+            {
+                "TradDt": "2026-11-06",
+                "TckrSymb": "PGINVIT",
+                "SctySrs": "IV",
+                "ClsPric": 105.38,
+                "TtlTradgVol": 45000,
+            },
+        ]
+    )
 
     res = parse_bhavcopy_row(df_udiff, "FEDERALBNK")
     assert res is not None
@@ -55,28 +57,30 @@ def test_parse_bhavcopy_udiff_format():
 
 def test_parse_bhavcopy_legacy_format():
     """Verify parsing of legacy NSE Bhavcopy format (SYMBOL, CLOSE, TOTTRDQTY)."""
-    df_legacy = pd.DataFrame([
-        {
-            "SYMBOL": "MANAPPURAM",
-            "SERIES": "EQ",
-            "OPEN": 320.0,
-            "HIGH": 328.0,
-            "LOW": 319.0,
-            "CLOSE": 325.40,
-            "TOTTRDQTY": 850000,
-            "TIMESTAMP": "05-JAN-2024",
-        },
-        {
-            "SYMBOL": "SILVERBEES",
-            "SERIES": "EQ",
-            "OPEN": 75.0,
-            "HIGH": 76.5,
-            "LOW": 74.8,
-            "CLOSE": 76.10,
-            "TOTTRDQTY": 320000,
-            "TIMESTAMP": "05-JAN-2024",
-        },
-    ])
+    df_legacy = pd.DataFrame(
+        [
+            {
+                "SYMBOL": "MANAPPURAM",
+                "SERIES": "EQ",
+                "OPEN": 320.0,
+                "HIGH": 328.0,
+                "LOW": 319.0,
+                "CLOSE": 325.40,
+                "TOTTRDQTY": 850000,
+                "TIMESTAMP": "05-JAN-2024",
+            },
+            {
+                "SYMBOL": "SILVERBEES",
+                "SERIES": "EQ",
+                "OPEN": 75.0,
+                "HIGH": 76.5,
+                "LOW": 74.8,
+                "CLOSE": 76.10,
+                "TOTTRDQTY": 320000,
+                "TIMESTAMP": "05-JAN-2024",
+            },
+        ]
+    )
 
     res = parse_bhavcopy_row(df_legacy, "MANAPPURAM")
     assert res is not None
@@ -93,14 +97,16 @@ def test_parse_bhavcopy_legacy_format():
 
 def test_parse_bhavcopy_case_insensitivity_and_missing():
     """Verify case-insensitivity, lowercase headers, and graceful missing ticker handling without KeyError."""
-    df_mixed = pd.DataFrame([
-        {
-            "tckrsymb": "tatasteel",
-            "sctysrs": "eq",
-            "clspric": 150.25,
-            "ttltradgvol": 99999,
-        }
-    ])
+    df_mixed = pd.DataFrame(
+        [
+            {
+                "tckrsymb": "tatasteel",
+                "sctysrs": "eq",
+                "clspric": 150.25,
+                "ttltradgvol": 99999,
+            }
+        ]
+    )
 
     res = parse_bhavcopy_row(df_mixed, "TATASTEEL")
     assert res is not None
@@ -228,8 +234,8 @@ def test_fetch_yfinance_history_unadjusted_close():
                 "Open": [100.0],
                 "High": [105.0],
                 "Low": [98.0],
-                "Close": [102.0],       # Unadjusted execution price
-                "Adj Close": [51.0],     # Dividend/split adjusted price
+                "Close": [102.0],  # Unadjusted execution price
+                "Adj Close": [51.0],  # Dividend/split adjusted price
                 "Volume": [1000],
             },
             index=pd.to_datetime(["2026-11-06"]),
@@ -251,10 +257,12 @@ def test_fetch_yfinance_history_unadjusted_close():
 def test_fetch_yfinance_quotes_unadjusted():
     """Verify fetch_yfinance_quotes uses auto_adjust=False in vectorized download."""
     with mock.patch("yfinance.download") as mock_download:
-        cols = pd.MultiIndex.from_tuples([
-            ("FEDERALBNK.NS", "Close"),
-            ("FEDERALBNK.NS", "Adj Close"),
-        ])
+        cols = pd.MultiIndex.from_tuples(
+            [
+                ("FEDERALBNK.NS", "Close"),
+                ("FEDERALBNK.NS", "Adj Close"),
+            ]
+        )
         mock_df = pd.DataFrame([[340.10, 170.05]], columns=cols)
         mock_download.return_value = mock_df
 

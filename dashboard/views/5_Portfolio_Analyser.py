@@ -1,14 +1,13 @@
 import os
 import sys
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from db import query_db
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from algo.portfolio_analytics import (
     check_guardrails,
     compute_beta,
@@ -20,23 +19,25 @@ from algo.portfolio_analytics import (
 )
 
 st.header("📊 Portfolio Analyser & Quantitative Risk Engine")
-st.caption("Institutional-grade portfolio analytics, fail-closed guardrails, and optimization models (inspired by Finance-Guru & EigenLedger).")
+st.caption(
+    "Institutional-grade portfolio analytics, fail-closed guardrails, and optimization models (inspired by Finance-Guru & EigenLedger)."
+)
 
 data = query_db("SELECT stock_code, quantity, average_price, current_price FROM holdings_snapshot")
 if not data:
     st.info("No holdings data available yet.")
 else:
-    df = pd.DataFrame(data, columns=['Stock Code', 'Quantity', 'Avg Price', 'Current Price'])
-    df['Current Value'] = df['Quantity'] * df['Current Price']
-    total_val = df['Current Value'].sum()
-    df['Weight (%)'] = (df['Current Value'] / total_val * 100.0) if total_val else 0.0
+    df = pd.DataFrame(data, columns=["Stock Code", "Quantity", "Avg Price", "Current Price"])
+    df["Current Value"] = df["Quantity"] * df["Current Price"]
+    total_val = df["Current Value"].sum()
+    df["Weight (%)"] = (df["Current Value"] / total_val * 100.0) if total_val else 0.0
 
     # ==============================================================================
     # 1. FAIL-CLOSED RISK GUARDRAILS
     # ==============================================================================
     st.subheader("🛡️ Risk Guardrails (Fail-Closed)")
     alerts = check_guardrails(df, max_position_cap_pct=12.0, max_top5_cap_pct=50.0, min_holdings_count=5)
-    
+
     if not alerts:
         st.success("✅ All risk guardrails satisfied: No concentration or diversification breaches.")
     else:
@@ -60,18 +61,18 @@ else:
         conc = compute_concentration(df, top_n=5)
         st.metric("Top 5 Holdings %", f"{conc['top_n_pct']:.1f}%")
         st.metric("Total Holdings", f"{len(df)} assets")
-        st.dataframe(pd.DataFrame(conc['top_holdings']), use_container_width=True)
+        st.dataframe(pd.DataFrame(conc["top_holdings"]), use_container_width=True)
 
     with col_c2:
         st.subheader("Holdings Distribution")
         fig_pie = px.pie(
-            df.nlargest(12, 'Current Value'),
-            values='Current Value',
-            names='Stock Code',
+            df.nlargest(12, "Current Value"),
+            values="Current Value",
+            names="Stock Code",
             hole=0.45,
-            title="Top 12 Holdings by Market Value"
+            title="Top 12 Holdings by Market Value",
         )
-        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+        fig_pie.update_traces(textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig_pie, use_container_width=True)
 
     # ==============================================================================
@@ -79,23 +80,23 @@ else:
     # ==============================================================================
     st.divider()
     st.subheader("📈 Institutional Risk & Performance Profile")
-    
+
     # Query portfolio value history
     hist_rows = query_db("SELECT timestamp, total_current_value FROM portfolio_value_history ORDER BY timestamp ASC")
     nifty_rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = '_NIFTY50' ORDER BY date ASC")
-    
+
     bench_returns = None
     if nifty_rows and len(nifty_rows) > 10:
-        nifty_df = pd.DataFrame(nifty_rows, columns=['date', 'close'])
-        nifty_df['date'] = pd.to_datetime(nifty_df['date'], format='mixed')
-        nifty_df = nifty_df.drop_duplicates('date').set_index('date').sort_index()
-        bench_returns = nifty_df['close'].pct_change().dropna()
+        nifty_df = pd.DataFrame(nifty_rows, columns=["date", "close"])
+        nifty_df["date"] = pd.to_datetime(nifty_df["date"], format="mixed")
+        nifty_df = nifty_df.drop_duplicates("date").set_index("date").sort_index()
+        bench_returns = nifty_df["close"].pct_change().dropna()
 
     if hist_rows and len(hist_rows) > 5:
-        p_hist = pd.DataFrame(hist_rows, columns=['timestamp', 'total_value'])
-        p_hist['timestamp'] = pd.to_datetime(p_hist['timestamp'], format='mixed')
-        p_hist = p_hist.drop_duplicates('timestamp').set_index('timestamp').sort_index()
-        port_returns = p_hist['total_value'].pct_change().dropna()
+        p_hist = pd.DataFrame(hist_rows, columns=["timestamp", "total_value"])
+        p_hist["timestamp"] = pd.to_datetime(p_hist["timestamp"], format="mixed")
+        p_hist = p_hist.drop_duplicates("timestamp").set_index("timestamp").sort_index()
+        port_returns = p_hist["total_value"].pct_change().dropna()
 
         metrics = compute_risk_metrics(port_returns, bench_returns, risk_free_rate=0.065)
 
@@ -113,12 +114,12 @@ else:
 
         # Drawdown Chart
         st.write("##### Underwater Drawdown Curve")
-        dd_series = compute_drawdown_series(p_hist['total_value'])
+        dd_series = compute_drawdown_series(p_hist["total_value"])
         fig_dd = px.area(
             x=dd_series.index,
             y=dd_series.values,
-            labels={'x': 'Date', 'y': 'Drawdown (%)'},
-            title="Portfolio Drawdown (%)"
+            labels={"x": "Date", "y": "Drawdown (%)"},
+            title="Portfolio Drawdown (%)",
         )
         fig_dd.update_traces(line_color="#e74c3c")
         st.plotly_chart(fig_dd, use_container_width=True)
@@ -139,8 +140,8 @@ else:
                 x=[f"Stage {k}" for k in sorted(counts.keys())],
                 y=[counts[k] for k in sorted(counts.keys())],
                 color=[f"Stage {k}" for k in sorted(counts.keys())],
-                labels={'x': 'Weinstein Stage', 'y': 'Number of Holdings'},
-                title="Holdings by Stage Classification"
+                labels={"x": "Weinstein Stage", "y": "Number of Holdings"},
+                title="Holdings by Stage Classification",
             )
             st.plotly_chart(fig_bar, use_container_width=True)
         else:
@@ -150,13 +151,13 @@ else:
         st.subheader("Stock Beta vs Nifty 50")
         if bench_returns is not None and not bench_returns.empty:
             betas = []
-            for stock in df['Stock Code'].head(15):
+            for stock in df["Stock Code"].head(15):
                 rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = ? ORDER BY date ASC", (stock,))
                 if rows and len(rows) > 30:
-                    s_df = pd.DataFrame(rows, columns=['date', 'close'])
-                    s_df['date'] = pd.to_datetime(s_df['date'], format='mixed')
-                    s_df = s_df.drop_duplicates('date').set_index('date').sort_index()
-                    aligned = pd.concat([s_df['close'], nifty_df['close']], axis=1, join='inner').dropna()
+                    s_df = pd.DataFrame(rows, columns=["date", "close"])
+                    s_df["date"] = pd.to_datetime(s_df["date"], format="mixed")
+                    s_df = s_df.drop_duplicates("date").set_index("date").sort_index()
+                    aligned = pd.concat([s_df["close"], nifty_df["close"]], axis=1, join="inner").dropna()
                     if len(aligned) > 30:
                         b = compute_beta(aligned.iloc[:, 0], aligned.iloc[:, 1])
                         betas.append({"Stock Code": stock, "Beta": round(b, 2)})
@@ -172,15 +173,17 @@ else:
     # ==============================================================================
     st.divider()
     st.subheader("🎯 Quantitative Portfolio Optimization")
-    st.caption("Computes mathematically optimal asset weights across your active holdings based on historical volatility and returns.")
+    st.caption(
+        "Computes mathematically optimal asset weights across your active holdings based on historical volatility and returns."
+    )
 
     # Collect OHLCV for top holdings
-    top_stocks = df.nlargest(10, 'Current Value')['Stock Code'].tolist()
+    top_stocks = df.nlargest(10, "Current Value")["Stock Code"].tolist()
     price_dict = {}
     for s in top_stocks:
         s_rows = query_db("SELECT date, close FROM ohlcv_cache WHERE stock_code = ? ORDER BY date ASC", (s,))
         if s_rows and len(s_rows) >= 30:
-            s_s = pd.DataFrame(s_rows, columns=['date', 'close']).drop_duplicates('date').set_index('date')['close']
+            s_s = pd.DataFrame(s_rows, columns=["date", "close"]).drop_duplicates("date").set_index("date")["close"]
             price_dict[s] = s_s
 
     if len(price_dict) >= 3:
@@ -193,9 +196,9 @@ else:
                     "max_sharpe": "Maximum Sharpe Ratio (Mean-Variance Optimal)",
                     "min_volatility": "Minimum Volatility (Capital Preservation)",
                     "inverse_volatility": "Risk Parity (Inverse Volatility)",
-                    "equal_weight": "Equal Weighting (1/N Baseline)"
+                    "equal_weight": "Equal Weighting (1/N Baseline)",
                 }[x],
-                horizontal=True
+                horizontal=True,
             )
 
             opt_weights = optimize_portfolio_weights(price_matrix, objective=opt_mode)
@@ -203,25 +206,41 @@ else:
             # Build comparison table
             comp_rows = []
             for s in price_matrix.columns:
-                curr_w = float(df[df['Stock Code'] == s]['Weight (%)'].values[0]) if len(df[df['Stock Code'] == s]) else 0.0
+                curr_w = (
+                    float(df[df["Stock Code"] == s]["Weight (%)"].values[0]) if len(df[df["Stock Code"] == s]) else 0.0
+                )
                 target_w = opt_weights.get(s, 0.0)
                 diff = target_w - curr_w
-                comp_rows.append({
-                    "Stock Code": s,
-                    "Current Weight (%)": round(curr_w, 2),
-                    "Target Weight (%)": round(target_w, 2),
-                    "Rebalance Delta (%)": round(diff, 2),
-                    "Action": "BUY MORE" if diff > 1.0 else ("TRIM" if diff < -1.0 else "HOLD / IN-LINE")
-                })
+                comp_rows.append(
+                    {
+                        "Stock Code": s,
+                        "Current Weight (%)": round(curr_w, 2),
+                        "Target Weight (%)": round(target_w, 2),
+                        "Rebalance Delta (%)": round(diff, 2),
+                        "Action": "BUY MORE" if diff > 1.0 else ("TRIM" if diff < -1.0 else "HOLD / IN-LINE"),
+                    }
+                )
             comp_df = pd.DataFrame(comp_rows)
             st.dataframe(comp_df, use_container_width=True)
 
             # Target vs Current Bar Chart
-            fig_comp = go.Figure(data=[
-                go.Bar(name='Current Weight (%)', x=comp_df['Stock Code'], y=comp_df['Current Weight (%)'], marker_color='#3498db'),
-                go.Bar(name='Target Weight (%)', x=comp_df['Stock Code'], y=comp_df['Target Weight (%)'], marker_color='#2ecc71')
-            ])
-            fig_comp.update_layout(barmode='group', title="Current vs. Optimized Target Weights")
+            fig_comp = go.Figure(
+                data=[
+                    go.Bar(
+                        name="Current Weight (%)",
+                        x=comp_df["Stock Code"],
+                        y=comp_df["Current Weight (%)"],
+                        marker_color="#3498db",
+                    ),
+                    go.Bar(
+                        name="Target Weight (%)",
+                        x=comp_df["Stock Code"],
+                        y=comp_df["Target Weight (%)"],
+                        marker_color="#2ecc71",
+                    ),
+                ]
+            )
+            fig_comp.update_layout(barmode="group", title="Current vs. Optimized Target Weights")
             st.plotly_chart(fig_comp, use_container_width=True)
         else:
             st.info("Insufficient overlapping price history to run optimization matrix.")

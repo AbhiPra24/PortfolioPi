@@ -1,19 +1,18 @@
-import json
 import logging
 from typing import Any, Dict, List, Optional
+
 import aiohttp
-from app_config import settings
+
 from core.circuit_breaker import (
     CircuitState,
     DualEngineRouter,
-    probe_endpoint_health,
-    parse_host_port_from_url,
 )
 
 logger = logging.getLogger(__name__)
 
 # Global DualEngineRouter singleton instance
 default_router = DualEngineRouter()
+
 
 async def _post_ollama(
     url: str,
@@ -47,6 +46,7 @@ async def _post_ollama(
     except Exception as e:
         logger.info(f"Ollama call to {url} ({model}) failed or timed out: {e}")
         return None
+
 
 async def _execute_generation(
     prompt: str,
@@ -98,7 +98,10 @@ async def _execute_generation(
     logger.error(f"[Ollama Inference Failed] Could not generate response from {url} ({model}).")
     return None
 
-def build_compressed_telemetry(ticker: str, metrics: Dict[str, Any], portfolio_ctx: Optional[Dict[str, Any]] = None) -> str:
+
+def build_compressed_telemetry(
+    ticker: str, metrics: Dict[str, Any], portfolio_ctx: Optional[Dict[str, Any]] = None
+) -> str:
     """
     Constructs a positional pipe-delimited telemetry line for 1.5B edge model inference.
     Micro-schema:
@@ -107,7 +110,7 @@ def build_compressed_telemetry(ticker: str, metrics: Dict[str, Any], portfolio_c
     [AUDIT] BHEL|2|7/7|84|-0.5%|+52.2%|2|LT|EXIT_STOP
     """
     ctx = portfolio_ctx or {}
-    
+
     # 1. TKR
     tkr = (ticker or metrics.get("ticker", "")).strip().upper()
 
@@ -147,13 +150,14 @@ def build_compressed_telemetry(ticker: str, metrics: Dict[str, Any], portfolio_c
     cmp_val = metrics.get("price", metrics.get("current_price", metrics.get("ltp")))
     if cmp_val is None and "quote" in metrics and isinstance(metrics["quote"], dict):
         cmp_val = metrics["quote"].get("ltp", metrics["quote"].get("price"))
-    
+
     stop_val = metrics.get("stop_loss", metrics.get("stop"))
     # Fallback to parsing stop loss from rationale if not explicitly passed
     if stop_val is None:
         rationale_str = metrics.get("rationale", "")
         if isinstance(rationale_str, str) and "Chandelier Exit" in rationale_str:
             import re
+
             m = re.search(r"Chandelier Exit \(([\d\.]+)\)", rationale_str)
             if m:
                 try:
@@ -232,6 +236,7 @@ def build_compressed_telemetry(ticker: str, metrics: Dict[str, Any], portfolio_c
 
     return f"[AUDIT] {tkr}|{stg}|{min_score}|{rs_str}|{stop_d_str}|{pnl_str}|{dist_d}|{tax_term}|{pre_act}"
 
+
 def build_compressed_prompt(telemetry_lines: List[str]) -> str:
     """
     Constructs the compressed micro-prompt for the edge model with strict causal grammar.
@@ -247,6 +252,7 @@ def build_compressed_prompt(telemetry_lines: List[str]) -> str:
         "- <Directive 2>"
     )
     return prompt
+
 
 async def generate_ai_analysis(
     ticker: str,
@@ -265,6 +271,7 @@ async def generate_ai_analysis(
         "num_predict": 128,
     }
     return await _execute_generation(prompt, timeout_seconds=30.0, options=options, router=router)
+
 
 async def generate_batch_ai_analysis(
     items: List[Dict[str, Any]],
@@ -297,7 +304,7 @@ async def generate_batch_ai_analysis(
 
     # Process in micro-batches
     for i in range(0, len(items), effective_batch_size):
-        batch = items[i:i + effective_batch_size]
+        batch = items[i : i + effective_batch_size]
         telemetry_lines = []
         for item in batch:
             tkr = item.get("ticker", "")
@@ -312,7 +319,7 @@ async def generate_batch_ai_analysis(
             options=options,
             router=active_router,
         )
-        
+
         if response:
             # Parse responses per ticker
             if len(batch) == 1:
@@ -348,6 +355,7 @@ async def generate_batch_ai_analysis(
 
     return results
 
+
 async def generate_opportunity_rotation_analysis(
     laggards: list,
     leaders: list,
@@ -357,14 +365,18 @@ async def generate_opportunity_rotation_analysis(
     Synthesizes an active rotation strategy pairing weak/broken holdings
     with top Stage 2 breakout setups to maximize portfolio CAGR.
     """
-    laggard_text = "\n".join([
-        f"- {x['ticker']}: Price ₹{x['price']}, Loss {x.get('pnl_pct', 0):+.1f}%, Stage {x.get('stage')}, Composite Score {x.get('score')}/100, Stop Loss ₹{x.get('stop_loss')}"
-        for x in laggards
-    ])
-    leader_text = "\n".join([
-        f"- {x['ticker']}: Price ₹{x['price']}, Stage {x.get('stage')}, RS {x.get('rs_score')}, TT {x.get('tt_score')}/7, Composite Score {x.get('score')}/100"
-        for x in leaders
-    ])
+    laggard_text = "\n".join(
+        [
+            f"- {x['ticker']}: Price ₹{x['price']}, Loss {x.get('pnl_pct', 0):+.1f}%, Stage {x.get('stage')}, Composite Score {x.get('score')}/100, Stop Loss ₹{x.get('stop_loss')}"
+            for x in laggards
+        ]
+    )
+    leader_text = "\n".join(
+        [
+            f"- {x['ticker']}: Price ₹{x['price']}, Stage {x.get('stage')}, RS {x.get('rs_score')}, TT {x.get('tt_score')}/7, Composite Score {x.get('score')}/100"
+            for x in leaders
+        ]
+    )
 
     prompt = f"""You are the Chief Quantitative Strategist for PortfolioPi.
 Your mandate is to MAXIMIZE long-term portfolio growth by actively pruning capital dragging positions and reallocating into top-tier Stage 2 leaders.

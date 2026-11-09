@@ -59,9 +59,23 @@ signals = query_db("""
 """)
 
 if signals:
-    df = pd.DataFrame(signals, columns=[
-        'Stock', 'RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score', 'Timestamp', 'Action', 'Rationale'
-    ])
-    for col in ['RSI (14)', 'MACD Line', 'MACD Signal', 'SMA 50', 'SMA 200', 'Dist 52w High %', 'Vol Ratio', 'Score']:
-        df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
+    df = pd.DataFrame(
+        signals,
+        columns=[
+            "Stock",
+            "RSI (14)",
+            "MACD Line",
+            "MACD Signal",
+            "SMA 50",
+            "SMA 200",
+            "Dist 52w High %",
+            "Vol Ratio",
+            "Score",
+            "Timestamp",
+            "Action",
+            "Rationale",
+        ],
+    )
+    for col in ["RSI (14)", "MACD Line", "MACD Signal", "SMA 50", "SMA 200", "Dist 52w High %", "Vol Ratio", "Score"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce").round(2)
     st.dataframe(df, use_container_width=True)

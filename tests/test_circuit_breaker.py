@@ -1,24 +1,25 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
+from core.ai_analyst import (
+    build_compressed_prompt,
+    build_compressed_telemetry,
+    generate_batch_ai_analysis,
+)
 from core.circuit_breaker import (
     CircuitState,
     DualEngineRouter,
-    probe_endpoint_health,
     parse_host_port_from_url,
-)
-from core.ai_analyst import (
-    build_compressed_telemetry,
-    build_compressed_prompt,
-    generate_ai_analysis,
-    generate_batch_ai_analysis,
+    probe_endpoint_health,
 )
 
 
 @pytest.mark.anyio
 async def test_probe_endpoint_health_success():
     """Verify async TCP probe returns True when port connection succeeds."""
+
     async def mock_open_connection(host, port):
         writer = MagicMock()
         writer.close = MagicMock()
@@ -33,6 +34,7 @@ async def test_probe_endpoint_health_success():
 @pytest.mark.anyio
 async def test_probe_endpoint_health_timeout():
     """Verify async TCP probe returns False when connection times out (>800ms)."""
+
     async def mock_timeout(host, port):
         await asyncio.sleep(0.05)
         raise asyncio.TimeoutError()
@@ -134,15 +136,14 @@ async def test_batch_micro_chunking_edge_mode_4_tickers():
     router.trip_to_edge("Simulate tripped edge mode")
     assert router.state == CircuitState.EDGE
 
-    mock_post = AsyncMock(side_effect=[
-        "T1 | STG:2 | STOP:+1.0% | ACT:HOLD\nT2 | STG:2 | STOP:+2.0% | ACT:HOLD\nT3 | STG:2 | STOP:+3.0% | ACT:HOLD\nT4 | STG:2 | STOP:+4.0% | ACT:HOLD",
-        "T5 | STG:2 | STOP:+5.0% | ACT:HOLD\nT6 | STG:2 | STOP:+6.0% | ACT:HOLD",
-    ])
+    mock_post = AsyncMock(
+        side_effect=[
+            "T1 | STG:2 | STOP:+1.0% | ACT:HOLD\nT2 | STG:2 | STOP:+2.0% | ACT:HOLD\nT3 | STG:2 | STOP:+3.0% | ACT:HOLD\nT4 | STG:2 | STOP:+4.0% | ACT:HOLD",
+            "T5 | STG:2 | STOP:+5.0% | ACT:HOLD\nT6 | STG:2 | STOP:+6.0% | ACT:HOLD",
+        ]
+    )
 
-    items = [
-        {"ticker": f"T{i}", "metrics": {"price": 100 * i, "stop_loss": 90 * i, "stage": 2}}
-        for i in range(1, 7)
-    ]
+    items = [{"ticker": f"T{i}", "metrics": {"price": 100 * i, "stop_loss": 90 * i, "stage": 2}} for i in range(1, 7)]
 
     with patch("core.circuit_breaker.probe_endpoint_health", AsyncMock(return_value=False)):
         with patch("core.ai_analyst._post_ollama", mock_post):

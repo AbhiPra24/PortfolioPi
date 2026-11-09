@@ -14,15 +14,15 @@ Routing Rules:
 3. Supports generating importable Trade Racer CSV payloads and UPI deep links.
 """
 
-from dataclasses import dataclass, field
-from enum import Enum
 import math
 import sqlite3
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional
+
 import aiosqlite
 
 from algo.order_payloads import BasketOrder, create_rebalance_execution_payload, generate_trade_racer_csv
-from app_config import settings
 
 
 class RedeploymentAction(str, Enum):
@@ -34,6 +34,7 @@ class RedeploymentAction(str, Enum):
 @dataclass
 class LiquidFloatReport:
     """Evaluation summary of unallocated cash float and dynamic sweep/redeployment action."""
+
     unallocated_cash: float
     paused_sip_amount: float
     unallocated_cash_float: float
@@ -147,9 +148,9 @@ def evaluate_liquid_float_sweep(
     stage2_leader = None
     if stage2_leaders:
         valid_leaders = [
-            c for c in stage2_leaders
-            if (c.get("stage") == 2 or c.get("quant_stage") == 2)
-            and float(c.get("price", 0.0)) > 0
+            c
+            for c in stage2_leaders
+            if (c.get("stage") == 2 or c.get("quant_stage") == 2) and float(c.get("price", 0.0)) > 0
         ]
         if valid_leaders:
             # Sort by rs_score descending or composite_score descending
@@ -161,7 +162,11 @@ def evaluate_liquid_float_sweep(
 
     # Scenario 1: Stage 2 Breakout Leader Identified -> REDEPLOY
     if stage2_leader is not None:
-        leader_ticker = str(stage2_leader.get("ticker", stage2_leader.get("symbol", stage2_leader.get("stock_code", "")))).strip().upper()
+        leader_ticker = (
+            str(stage2_leader.get("ticker", stage2_leader.get("symbol", stage2_leader.get("stock_code", ""))))
+            .strip()
+            .upper()
+        )
         leader_price = float(stage2_leader.get("price", 0.0))
 
         orders: List[BasketOrder] = []
@@ -198,16 +203,24 @@ def evaluate_liquid_float_sweep(
             orders.append(buy_order)
 
         csv_str = generate_trade_racer_csv(orders)
-        exec_payload = create_rebalance_execution_payload(
-            orders=orders,
-            broker_vpa=broker_vpa,
-            basket_name=f"Redeploy_{leader_ticker}",
-        ) if orders else None
+        exec_payload = (
+            create_rebalance_execution_payload(
+                orders=orders,
+                broker_vpa=broker_vpa,
+                basket_name=f"Redeploy_{leader_ticker}",
+            )
+            if orders
+            else None
+        )
 
         rationale = (
             f"Stage 2 breakout leader {leader_ticker} identified (RS: {stage2_leader.get('rs_score', 'N/A')}). "
             f"Redeploying float ₹{total_float:,.2f}"
-            + (f" + harvesting {liquidbees_holdings_qty} {etf_ticker} (₹{harvest_value:,.2f})" if liquidbees_holdings_qty > 0 else "")
+            + (
+                f" + harvesting {liquidbees_holdings_qty} {etf_ticker} (₹{harvest_value:,.2f})"
+                if liquidbees_holdings_qty > 0
+                else ""
+            )
             + f" into {leader_qty} shares of {leader_ticker}."
         )
 
@@ -245,11 +258,15 @@ def evaluate_liquid_float_sweep(
         orders.append(sweep_order)
 
     csv_str = generate_trade_racer_csv(orders)
-    exec_payload = create_rebalance_execution_payload(
-        orders=orders,
-        broker_vpa=broker_vpa,
-        basket_name=f"Sweep_{etf_ticker}",
-    ) if orders else None
+    exec_payload = (
+        create_rebalance_execution_payload(
+            orders=orders,
+            broker_vpa=broker_vpa,
+            basket_name=f"Sweep_{etf_ticker}",
+        )
+        if orders
+        else None
+    )
 
     rationale = (
         f"No Stage 2 breakout leader identified. Freezing capital from breakdown SIPs (₹{paused_sip_amount:,.2f}) "

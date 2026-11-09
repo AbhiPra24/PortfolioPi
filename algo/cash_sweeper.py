@@ -8,10 +8,9 @@ allocation directives:
 Also generates execution basket orders and UPI funding mandates.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
-import pandas as pd
 
 from algo.order_payloads import BasketOrder, create_rebalance_execution_payload
 
@@ -24,6 +23,7 @@ class SweepTargetType(str, Enum):
 @dataclass
 class CashSweepDirective:
     """Actionable directive produced when cash exceeds drag threshold."""
+
     target_type: SweepTargetType
     symbol: str
     action: str
@@ -51,6 +51,7 @@ class CashSweepDirective:
 @dataclass
 class CashDragReport:
     """Evaluation summary of portfolio cash balance and sweep opportunities."""
+
     unallocated_cash: float
     accrued_dividends: float
     paused_sip_budget: float

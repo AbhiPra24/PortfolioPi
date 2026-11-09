@@ -2,16 +2,15 @@
 
 import os
 import tempfile
-import pytest
+
 import aiosqlite
+import pytest
 
 from core.account_aggregator import (
     AccountAggregatorGateway,
     AccountAggregatorNormalizer,
     AssetClass,
-    ConsentHandle,
     ConsentStatus,
-    ExternalHolding,
     FIType,
     MockAAClient,
 )

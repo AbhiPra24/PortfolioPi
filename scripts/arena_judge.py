@@ -6,38 +6,24 @@ Runs PortfolioPi scripts on identical live database inputs across:
 2. Raspberry Pi 5 CPU (qwen2.5:3b)
 """
 
-import time
 import json
+import time
+
 import requests
-import sqlite3
-import os
-import sys
-
-from analyse_signals import extract_signals_data
 from analyse_cashflow import extract_cashflow_data
+from analyse_signals import extract_signals_data
 
-TARGET_MAC = {
-    "name": "Mac Mini (Remote GPU)",
-    "url": "http://192.168.1.39:11434",
-    "model": "qwen2.5:7b"
-}
+TARGET_MAC = {"name": "Mac Mini (Remote GPU)", "url": "http://192.168.1.39:11434", "model": "qwen2.5:7b"}
 
-TARGET_PI = {
-    "name": "Raspberry Pi 5 (Local CPU)",
-    "url": "http://127.0.0.1:11434",
-    "model": "qwen2.5:3b"
-}
+TARGET_PI = {"name": "Raspberry Pi 5 (Local CPU)", "url": "http://127.0.0.1:11434", "model": "qwen2.5:3b"}
+
 
 def query_model(target, prompt, system_prompt=None):
     payload = {
         "model": target["model"],
         "prompt": prompt,
         "stream": False,
-        "options": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "num_predict": 400
-        }
+        "options": {"temperature": 0.2, "top_p": 0.9, "num_predict": 400},
     }
     if system_prompt:
         payload["system"] = system_prompt
@@ -55,17 +41,15 @@ def query_model(target, prompt, system_prompt=None):
             "response": data.get("response", "").strip(),
             "time_s": dur,
             "tokens": eval_count,
-            "tps": tps
+            "tps": tps,
         }
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
 
 def run_test_suite():
     db_path = "/data/Work/PortfolioPi/data/portfoliopi.db"
-    
+
     # 1. Signals Data (trimmed to top 5 critical to keep prompt compact and test inference)
     signals_data = extract_signals_data(db_path)
     signals_data["critical_sell_signals"] = signals_data.get("critical_sell_signals", [])[:5]
@@ -97,42 +81,42 @@ Deliver a concise 3-bullet action plan addressing misaligned SIPs and dividend r
 User Question: Which stock requires immediate exit and why? Give a direct 3-bullet actionable answer."""
 
     tests = [
-        {"name": "Test 1: Technical Momentum & Signals Audit (analyse_signals)", "sys": sys_signals, "prompt": prompt_signals},
+        {
+            "name": "Test 1: Technical Momentum & Signals Audit (analyse_signals)",
+            "sys": sys_signals,
+            "prompt": prompt_signals,
+        },
         {"name": "Test 2: Cashflow & SIP Allocation Audit (analyse_cashflow)", "sys": sys_cf, "prompt": prompt_cf},
-        {"name": "Test 3: Risk Triage & Exit Comparison (ask_portfolio)", "sys": sys_ask, "prompt": prompt_ask}
+        {"name": "Test 3: Risk Triage & Exit Comparison (ask_portfolio)", "sys": sys_ask, "prompt": prompt_ask},
     ]
 
     arena_results = []
 
     for t in tests:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"RUNNING: {t['name']}")
-        print(f"{'='*70}")
-        
+        print(f"{'=' * 70}")
+
         print(f"[*] Querying Mac Mini GPU ({TARGET_MAC['model']})...")
-        res_mac = query_model(TARGET_MAC, t['prompt'], t.get('sys'))
-        if res_mac['success']:
+        res_mac = query_model(TARGET_MAC, t["prompt"], t.get("sys"))
+        if res_mac["success"]:
             print(f"    -> Done in {res_mac['time_s']:.2f}s ({res_mac['tps']:.1f} tok/s, {res_mac['tokens']} tokens)")
         else:
             print(f"    -> FAILED: {res_mac.get('error')}")
 
         print(f"[*] Querying Raspberry Pi 5 CPU ({TARGET_PI['model']})...")
-        res_pi = query_model(TARGET_PI, t['prompt'], t.get('sys'))
-        if res_pi['success']:
+        res_pi = query_model(TARGET_PI, t["prompt"], t.get("sys"))
+        if res_pi["success"]:
             print(f"    -> Done in {res_pi['time_s']:.2f}s ({res_pi['tps']:.1f} tok/s, {res_pi['tokens']} tokens)")
         else:
             print(f"    -> FAILED: {res_pi.get('error')}")
 
-        arena_results.append({
-            "test_name": t['name'],
-            "prompt": t['prompt'],
-            "mac": res_mac,
-            "pi": res_pi
-        })
+        arena_results.append({"test_name": t["name"], "prompt": t["prompt"], "mac": res_mac, "pi": res_pi})
 
     with open("/data/Work/PortfolioPi/data/arena_results.json", "w") as f:
         json.dump(arena_results, f, indent=2)
     print("\n[+] Arena evaluation complete! Saved to /data/Work/PortfolioPi/data/arena_results.json")
+
 
 if __name__ == "__main__":
     run_test_suite()

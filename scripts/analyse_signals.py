@@ -7,8 +7,6 @@ Highlights stocks breaking below stops, flashing divergences, or requiring immed
 
 import argparse
 import json
-import os
-import sys
 
 from ollama_common import (
     get_db_connection,
@@ -17,9 +15,8 @@ from ollama_common import (
     resolve_fallback_model,
     resolve_ollama_endpoint,
     resolve_ollama_model,
-    stream_ollama
+    stream_ollama,
 )
-
 
 
 def extract_signals_data(db_path: str) -> dict:
@@ -50,7 +47,7 @@ def extract_signals_data(db_path: str) -> dict:
             "action": r["action"],
             "rationale": r["rationale"],
             "current_value": round(float(r["cur_val"] or 0), 2),
-            "pnl_pct": round(float(r["pnl_pct"] or 0), 2) if r["pnl_pct"] is not None else None
+            "pnl_pct": round(float(r["pnl_pct"] or 0), 2) if r["pnl_pct"] is not None else None,
         }
         if "SELL" in act or "STOP" in act:
             sell_actions.append(item)
@@ -91,7 +88,7 @@ def extract_signals_data(db_path: str) -> dict:
             "pct_from_52w_high": round(float(r["pct_from_52w_high"] or 0), 1),
             "volume_ratio_20d": round(float(r["volume_ratio_20d"] or 1), 2),
             "stage": r["stage"],
-            "slope": round(float(r["slope"]), 4) if r["slope"] is not None else None
+            "slope": round(float(r["slope"]), 4) if r["slope"] is not None else None,
         }
         if rsi >= 70:
             overbought.append(item)
@@ -109,13 +106,13 @@ def extract_signals_data(db_path: str) -> dict:
             "buy_or_hold_count": len(buy_hold_actions),
             "overbought_count": len(overbought),
             "oversold_count": len(oversold),
-            "weak_momentum_count": len(weak_momentum)
+            "weak_momentum_count": len(weak_momentum),
         },
         "critical_sell_signals": sell_actions,
         "trim_warnings": trim_actions,
         "weak_momentum_holdings": weak_momentum[:8],
         "overbought_holdings": overbought,
-        "oversold_holdings": oversold
+        "oversold_holdings": oversold,
     }
 
 
@@ -128,7 +125,6 @@ def main():
     parser.add_argument("--fallback-model", default=resolve_fallback_model(), help="Fallback Ollama model name")
     parser.add_argument("--dry-run", action="store_true", help="Print extracted data and exit")
     args = parser.parse_args()
-
 
     data = extract_signals_data(args.db)
 
@@ -165,14 +161,18 @@ Deliver a concise, urgent trading report with these sections:
    - Provide an immediate 3-step execution plan for Monday's open.
 """
 
-    print(f"[*] Auditing momentum signals via Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n" + "=" * 60 + "\n")
+    print(
+        f"[*] Auditing momentum signals via Ollama (Primary: {args.model} @ {args.ollama_url} | Fallback: {args.fallback_model} @ {args.fallback_url})...\n"
+        + "=" * 60
+        + "\n"
+    )
     stream_ollama(
         prompt,
         system_prompt=system_prompt,
         base_url=args.ollama_url,
         model=args.model,
         fallback_url=args.fallback_url,
-        fallback_model=args.fallback_model
+        fallback_model=args.fallback_model,
     )
 
     print("\n" + "=" * 60)

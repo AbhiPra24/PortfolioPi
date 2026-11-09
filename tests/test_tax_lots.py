@@ -1,10 +1,8 @@
 """Unit tests for FIFO Tax-Lot Matching Engine, Tax-Conversion Hurdle, and Two-Tier Tax Hurdle Matrix."""
 
-from datetime import date, timedelta
-import pytest
+from datetime import date
 
 from algo.tax_lots import (
-    LTCG_ANNUAL_EXEMPTION_LIMIT,
     compute_fifo_tax_lots,
     compute_tax_conversion_hurdle,
     evaluate_tax_hurdle_rule,
@@ -14,9 +12,30 @@ from algo.tax_lots import (
 def test_compute_fifo_tax_lots_basic():
     as_of = date(2026, 11, 9)
     trades = [
-        {"trade_id": "T1", "stock_code": "INFY", "action": "Buy", "quantity": 100, "price": 1400.0, "trade_date": "2025-11-01"},
-        {"trade_id": "T2", "stock_code": "INFY", "action": "Buy", "quantity": 50, "price": 1500.0, "trade_date": "2026-05-01"},
-        {"trade_id": "T3", "stock_code": "INFY", "action": "Sell", "quantity": 120, "price": 1600.0, "trade_date": "2026-06-01"},
+        {
+            "trade_id": "T1",
+            "stock_code": "INFY",
+            "action": "Buy",
+            "quantity": 100,
+            "price": 1400.0,
+            "trade_date": "2025-11-01",
+        },
+        {
+            "trade_id": "T2",
+            "stock_code": "INFY",
+            "action": "Buy",
+            "quantity": 50,
+            "price": 1500.0,
+            "trade_date": "2026-05-01",
+        },
+        {
+            "trade_id": "T3",
+            "stock_code": "INFY",
+            "action": "Sell",
+            "quantity": 120,
+            "price": 1600.0,
+            "trade_date": "2026-06-01",
+        },
     ]
     current_prices = {"INFY": 1700.0}
 
@@ -43,7 +62,14 @@ def test_compute_fifo_tax_lots_basic():
 def test_compute_fifo_tax_lots_ltcg_and_cushion():
     as_of = date(2026, 11, 9)
     trades = [
-        {"trade_id": "B1", "stock_code": "TCS", "action": "Buy", "quantity": 10, "price": 3000.0, "trade_date": "2024-01-01"},
+        {
+            "trade_id": "B1",
+            "stock_code": "TCS",
+            "action": "Buy",
+            "quantity": 10,
+            "price": 3000.0,
+            "trade_date": "2024-01-01",
+        },
     ]
     current_prices = {"TCS": 4000.0}
 

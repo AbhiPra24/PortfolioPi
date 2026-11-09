@@ -16,6 +16,7 @@ password = os.getenv("DASHBOARD_PASSWORD")
 if not password:
     raise ValueError("DASHBOARD_PASSWORD environment variable is not set")
 
+
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
@@ -31,6 +32,7 @@ def check_password():
                 st.error("Incorrect password")
         return False
     return True
+
 
 if check_password():
     st.title("PortfolioPi")

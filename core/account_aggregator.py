@@ -10,18 +10,15 @@ Implements secure abstractions for the Sahamati Account Aggregator (AA) framewor
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import re
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import aiosqlite
-from pydantic import BaseModel, ConfigDict, Field
 
 from app_config import settings
 
@@ -31,6 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Enums and Types
 # ---------------------------------------------------------------------------
+
 
 class FIType(str, Enum):
     EQUITIES = "EQUITIES"
@@ -67,6 +65,7 @@ class AAPublisherProvider(str, Enum):
 # ---------------------------------------------------------------------------
 # Domain Models (Pydantic / Dataclasses)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ConsentHandle:
@@ -122,6 +121,7 @@ class AggregatedFinancialProfile:
 # ---------------------------------------------------------------------------
 # FI Normalizers (Equities, Mutual Funds, NPS)
 # ---------------------------------------------------------------------------
+
 
 class AccountAggregatorNormalizer:
     """Normalizes raw Sahamati/Setu/Finvu FI data payloads (JSON or parsed XML)
@@ -277,8 +277,8 @@ class AccountAggregatorNormalizer:
     def _detect_fi_type(cls, account: Dict[str, Any]) -> str:
         """Determines if the account represents EQUITIES, MUTUAL_FUNDS, or NPS."""
         # Direct fiType attribute
-        for field in ("fiType", "@fiType", "type", "asset_type"):
-            val = str(account.get(field, "")).upper()
+        for attr in ("fiType", "@fiType", "type", "asset_type"):
+            val = str(account.get(attr, "")).upper()
             if "EQUITY" in val or "EQUITIES" in val:
                 return FIType.EQUITIES.value
             if "MUTUAL" in val or "MF" in val:
@@ -354,15 +354,19 @@ class AccountAggregatorNormalizer:
 
         for item in raw_items:
             isin = str(item.get("isin") or item.get("isinCode") or item.get("@isin") or "").strip()
-            symbol = str(
-                item.get("symbol")
-                or item.get("@symbol")
-                or item.get("tradingSymbol")
-                or item.get("companyName")
-                or isin
-            ).strip().upper()
+            symbol = (
+                str(
+                    item.get("symbol")
+                    or item.get("@symbol")
+                    or item.get("tradingSymbol")
+                    or item.get("companyName")
+                    or isin
+                )
+                .strip()
+                .upper()
+            )
             name = str(item.get("companyName") or item.get("description") or symbol).strip()
-            
+
             # Clean symbols like 'NSE:RELIANCE' or 'BSE:500325'
             clean_symbol = symbol.split(":")[-1]
 
@@ -435,20 +439,10 @@ class AccountAggregatorNormalizer:
         for item in raw_items:
             isin = str(item.get("isin") or item.get("isinCode") or item.get("@isin") or "").strip()
             scheme_code = str(item.get("amfiCode") or item.get("schemeCode") or isin).strip()
-            name = str(
-                item.get("schemeName")
-                or item.get("description")
-                or item.get("name")
-                or scheme_code
-            ).strip()
+            name = str(item.get("schemeName") or item.get("description") or item.get("name") or scheme_code).strip()
 
             qty = float(item.get("units") or item.get("closingUnits") or item.get("@units") or 0.0)
-            cur_price = float(
-                item.get("nav")
-                or item.get("currentPrice")
-                or item.get("@nav")
-                or 0.0
-            )
+            cur_price = float(item.get("nav") or item.get("currentPrice") or item.get("@nav") or 0.0)
             cost_val = float(item.get("totalCost") or item.get("investedValue") or 0.0)
             avg_price = float(item.get("averagePrice") or (cost_val / qty if qty > 0 else 0.0))
 
@@ -514,10 +508,7 @@ class AccountAggregatorNormalizer:
                 or "NPS_SCHEME"
             ).strip()
             name = str(
-                item.get("schemeName")
-                or item.get("description")
-                or item.get("pensionFundManager")
-                or scheme_id
+                item.get("schemeName") or item.get("description") or item.get("pensionFundManager") or scheme_id
             ).strip()
 
             qty = float(item.get("units") or item.get("@units") or 0.0)
@@ -556,6 +547,7 @@ class AccountAggregatorNormalizer:
 # ---------------------------------------------------------------------------
 # Account Aggregator Client Abstraction (Base + Setu / Finvu Mock Clients)
 # ---------------------------------------------------------------------------
+
 
 class BaseAAClient:
     """Abstract interface defining required AA operations for an FIU client."""
@@ -668,89 +660,95 @@ class MockAAClient(BaseAAClient):
         accounts = []
 
         if FIType.EQUITIES.value in fi_types:
-            accounts.append({
-                "fiType": "EQUITIES",
-                "linkedAccRef": "1208160012345678",
-                "maskedAccNumber": "XXXXXX5678",
-                "dpId": "IN300123",
-                "Holdings": {
-                    "Holding": [
-                        {
-                            "companyName": "Reliance Industries Limited",
-                            "symbol": "RELIANCE",
-                            "isin": "INE002A01018",
-                            "units": 25,
-                            "averagePrice": 2450.50,
-                            "currentPrice": 2890.00,
-                            "currentValue": 72250.00,
-                            "totalCost": 61262.50,
-                        },
-                        {
-                            "companyName": "Infosys Limited",
-                            "symbol": "INFY",
-                            "isin": "INE009A01021",
-                            "units": 50,
-                            "averagePrice": 1420.00,
-                            "currentPrice": 1640.00,
-                            "currentValue": 82000.00,
-                            "totalCost": 71000.00,
-                        },
-                    ]
-                },
-            })
+            accounts.append(
+                {
+                    "fiType": "EQUITIES",
+                    "linkedAccRef": "1208160012345678",
+                    "maskedAccNumber": "XXXXXX5678",
+                    "dpId": "IN300123",
+                    "Holdings": {
+                        "Holding": [
+                            {
+                                "companyName": "Reliance Industries Limited",
+                                "symbol": "RELIANCE",
+                                "isin": "INE002A01018",
+                                "units": 25,
+                                "averagePrice": 2450.50,
+                                "currentPrice": 2890.00,
+                                "currentValue": 72250.00,
+                                "totalCost": 61262.50,
+                            },
+                            {
+                                "companyName": "Infosys Limited",
+                                "symbol": "INFY",
+                                "isin": "INE009A01021",
+                                "units": 50,
+                                "averagePrice": 1420.00,
+                                "currentPrice": 1640.00,
+                                "currentValue": 82000.00,
+                                "totalCost": 71000.00,
+                            },
+                        ]
+                    },
+                }
+            )
 
         if FIType.MUTUAL_FUNDS.value in fi_types:
-            accounts.append({
-                "fiType": "MUTUAL_FUNDS",
-                "linkedAccRef": "FOLIO-102938475",
-                "folioNo": "FOLIO-102938475",
-                "Holdings": {
-                    "Holding": [
-                        {
-                            "schemeName": "Parag Parikh Flexi Cap Fund Direct Growth",
-                            "amfiCode": "122639",
-                            "isin": "INF879O01019",
-                            "units": 1500.450,
-                            "nav": 74.85,
-                            "averagePrice": 52.30,
-                            "currentValue": 112308.68,
-                            "totalCost": 78473.54,
-                            "navDate": "2026-11-08",
-                        }
-                    ]
-                },
-            })
+            accounts.append(
+                {
+                    "fiType": "MUTUAL_FUNDS",
+                    "linkedAccRef": "FOLIO-102938475",
+                    "folioNo": "FOLIO-102938475",
+                    "Holdings": {
+                        "Holding": [
+                            {
+                                "schemeName": "Parag Parikh Flexi Cap Fund Direct Growth",
+                                "amfiCode": "122639",
+                                "isin": "INF879O01019",
+                                "units": 1500.450,
+                                "nav": 74.85,
+                                "averagePrice": 52.30,
+                                "currentValue": 112308.68,
+                                "totalCost": 78473.54,
+                                "navDate": "2026-11-08",
+                            }
+                        ]
+                    },
+                }
+            )
 
         if FIType.NPS.value in fi_types:
-            accounts.append({
-                "fiType": "NPS",
-                "linkedAccRef": "PRAN-110099887766",
-                "pran": "PRAN-110099887766",
-                "Holdings": {
-                    "Scheme": [
-                        {
-                            "schemeId": "SM001001",
-                            "pensionFundManager": "HDFC Pension Management - Scheme E Tier I",
-                            "units": 2340.125,
-                            "nav": 48.25,
-                            "averagePrice": 35.10,
-                            "currentValue": 112911.03,
-                            "totalCost": 82138.39,
-                            "navDate": "2026-11-08",
-                        },
-                        {
-                            "schemeId": "SM001002",
-                            "pensionFundManager": "HDFC Pension Management - Scheme C Tier I",
-                            "units": 1120.500,
-                            "nav": 32.10,
-                            "averagePrice": 25.00,
-                            "currentValue": 35968.05,
-                            "totalCost": 28012.50,
-                            "navDate": "2026-11-08",
-                        },
-                    ]
-                },
-            })
+            accounts.append(
+                {
+                    "fiType": "NPS",
+                    "linkedAccRef": "PRAN-110099887766",
+                    "pran": "PRAN-110099887766",
+                    "Holdings": {
+                        "Scheme": [
+                            {
+                                "schemeId": "SM001001",
+                                "pensionFundManager": "HDFC Pension Management - Scheme E Tier I",
+                                "units": 2340.125,
+                                "nav": 48.25,
+                                "averagePrice": 35.10,
+                                "currentValue": 112911.03,
+                                "totalCost": 82138.39,
+                                "navDate": "2026-11-08",
+                            },
+                            {
+                                "schemeId": "SM001002",
+                                "pensionFundManager": "HDFC Pension Management - Scheme C Tier I",
+                                "units": 1120.500,
+                                "nav": 32.10,
+                                "averagePrice": 25.00,
+                                "currentValue": 35968.05,
+                                "totalCost": 28012.50,
+                                "navDate": "2026-11-08",
+                            },
+                        ]
+                    },
+                }
+            )
 
         return {"accounts": accounts}
 
@@ -999,6 +997,7 @@ class FinvuFIUClient(BaseAAClient):
 # Account Aggregator Expansion Gateway (Persistence & Orchestrator)
 # ---------------------------------------------------------------------------
 
+
 class AccountAggregatorGateway:
     """Expansion Gateway for Sahamati Account Aggregator (AA) framework.
 
@@ -1126,7 +1125,7 @@ class AccountAggregatorGateway:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
-                UPDATE aa_consents 
+                UPDATE aa_consents
                 SET status = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE consent_handle = ? OR consent_id = ?
                 """,
@@ -1316,8 +1315,8 @@ class AccountAggregatorGateway:
             # Query external holdings breakdown
             async with db.execute(
                 """
-                SELECT asset_class, COALESCE(SUM(current_value), 0.0), COUNT(*) 
-                FROM external_holdings 
+                SELECT asset_class, COALESCE(SUM(current_value), 0.0), COUNT(*)
+                FROM external_holdings
                 GROUP BY asset_class
                 """
             ) as cur:

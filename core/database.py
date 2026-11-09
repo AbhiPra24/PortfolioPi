@@ -1,10 +1,10 @@
 """SQLite database initialization and schema setup."""
 
-from contextlib import asynccontextmanager
 import logging
 import os
 import sqlite3
-from typing import AsyncGenerator, Optional, Union
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Optional
 
 import aiosqlite
 
@@ -81,7 +81,6 @@ async def init_db():
         os.makedirs(db_dir, exist_ok=True)
 
     async with get_db_connection(settings.db_path) as db:
-
         await db.execute("""
             CREATE TABLE IF NOT EXISTS holdings_snapshot (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -355,15 +354,19 @@ async def init_db():
             "max_drawdown REAL",
             "downside_deviation REAL",
         ]:
-            col_name = col_def.split()[0]
+            col_def.split()[0]
             try:
                 await db.execute(f"ALTER TABLE portfolio_risk_metrics ADD COLUMN {col_def};")
             except Exception:
                 pass  # Column already exists
 
         # Ensure critical unique constraints / indexes exist for upserts
-        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_holdings_snapshot_stock_code ON holdings_snapshot(stock_code);")
-        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_mapping_stock_code ON ticker_mapping(stock_code);")
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_holdings_snapshot_stock_code ON holdings_snapshot(stock_code);"
+        )
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_mapping_stock_code ON ticker_mapping(stock_code);"
+        )
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_history_trade_id ON trades_history(trade_id);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_history_order_id ON orders_history(order_id);")
 
@@ -407,13 +410,15 @@ async def init_db():
             )
         """)
 
-        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ext_holdings_pk ON external_holdings(source_fiu, account_id, symbol);")
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_ext_holdings_pk ON external_holdings(source_fiu, account_id, symbol);"
+        )
 
         # Create/refresh tax_lots_view: FIFO lot matching from trades_history
         await db.execute("""
             CREATE VIEW IF NOT EXISTS tax_lots_view AS
             WITH buys AS (
-                SELECT 
+                SELECT
                     id,
                     trade_id AS lot_id,
                     UPPER(TRIM(stock_code)) AS stock_code,
@@ -425,7 +430,7 @@ async def init_db():
                 WHERE UPPER(TRIM(action)) = 'BUY'
             ),
             sells AS (
-                SELECT 
+                SELECT
                     UPPER(TRIM(stock_code)) AS stock_code,
                     COALESCE(SUM(quantity), 0) AS total_sold_qty
                 FROM trades_history
@@ -433,7 +438,7 @@ async def init_db():
                 GROUP BY UPPER(TRIM(stock_code))
             ),
             matched AS (
-                SELECT 
+                SELECT
                     b.id,
                     b.lot_id,
                     b.stock_code,
@@ -442,7 +447,7 @@ async def init_db():
                     b.quantity AS original_qty,
                     b.cum_buy_qty,
                     COALESCE(s.total_sold_qty, 0) AS total_sold,
-                    CASE 
+                    CASE
                         WHEN b.cum_buy_qty <= COALESCE(s.total_sold_qty, 0) THEN 0
                         WHEN b.cum_buy_qty - b.quantity < COALESCE(s.total_sold_qty, 0) THEN b.cum_buy_qty - COALESCE(s.total_sold_qty, 0)
                         ELSE b.quantity
@@ -450,25 +455,25 @@ async def init_db():
                 FROM buys b
                 LEFT JOIN sells s ON b.stock_code = s.stock_code
             )
-            SELECT 
+            SELECT
                 m.lot_id,
                 m.stock_code,
                 m.buy_date,
                 m.remaining_qty AS quantity,
                 ROUND(m.buy_price, 2) AS buy_price,
                 CAST(MAX(0, julianday('now') - julianday(m.buy_date)) AS INTEGER) AS holding_days,
-                CASE 
-                    WHEN (julianday('now') - julianday(m.buy_date)) <= 365 THEN 'STCG' 
-                    ELSE 'LTCG' 
+                CASE
+                    WHEN (julianday('now') - julianday(m.buy_date)) <= 365 THEN 'STCG'
+                    ELSE 'LTCG'
                 END AS tax_category,
                 CAST(MAX(0, 365 - (julianday('now') - julianday(m.buy_date))) AS INTEGER) AS days_to_ltcg,
                 ROUND(COALESCE(h.current_price, m.buy_price) - m.buy_price, 2) AS unrealized_gain_per_share,
                 ROUND(
-                    CASE 
-                        WHEN (julianday('now') - julianday(m.buy_date)) <= 365 AND COALESCE(h.current_price, m.buy_price) > m.buy_price 
+                    CASE
+                        WHEN (julianday('now') - julianday(m.buy_date)) <= 365 AND COALESCE(h.current_price, m.buy_price) > m.buy_price
                         THEN (0.20 - 0.125) * (COALESCE(h.current_price, m.buy_price) - m.buy_price) / COALESCE(h.current_price, m.buy_price) * 100.0
-                        ELSE 0.0 
-                    END, 
+                        ELSE 0.0
+                    END,
                     2
                 ) AS price_cushion_required
             FROM matched m

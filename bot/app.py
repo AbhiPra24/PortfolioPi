@@ -51,8 +51,10 @@ COMMANDS = [
     BotCommand("help", "Show all commands"),
 ]
 
+
 async def _post_init(app: Application):
     await app.bot.set_my_commands(COMMANDS)
+
 
 def create_app() -> Application:
     app = Application.builder().token(settings.telegram_bot_token.get_secret_value()).post_init(_post_init).build()

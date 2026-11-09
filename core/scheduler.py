@@ -10,6 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.ext import Application
 
 from app_config import settings
+
 from .data_refresh import run_breeze_sync, run_market_data_refresh
 
 logger = logging.getLogger(__name__)
@@ -40,9 +41,7 @@ async def process_refresh_requests_job(app: Application):
                 logger.info(f"Processing manual refresh request {req_id}...")
                 await run_breeze_sync(app, silent=True)
                 await run_market_data_refresh(app, send_digest=True)
-                await db.execute(
-                    "UPDATE refresh_requests SET processed_at = CURRENT_TIMESTAMP WHERE id = ?", (req_id,)
-                )
+                await db.execute("UPDATE refresh_requests SET processed_at = CURRENT_TIMESTAMP WHERE id = ?", (req_id,))
                 await db.commit()
     except Exception as e:
         logger.error(f"Error checking refresh_requests: {e}")
@@ -112,11 +111,11 @@ async def db_backup_job():
 
 def start_scheduler(app: Application):
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(daily_digest_job, 'cron', hour=8, minute=0, args=[app], timezone='Asia/Kolkata')
+    scheduler.add_job(daily_digest_job, "cron", hour=8, minute=0, args=[app], timezone="Asia/Kolkata")
 
-    scheduler.add_job(market_data_refresh_job, 'interval', minutes=60, args=[app])
+    scheduler.add_job(market_data_refresh_job, "interval", minutes=60, args=[app])
 
-    scheduler.add_job(db_backup_job, 'cron', hour=23, minute=30, timezone='Asia/Kolkata')
-    scheduler.add_job(process_refresh_requests_job, 'interval', seconds=60, args=[app])
-    scheduler.add_job(process_backfill_requests_job, 'interval', seconds=20, args=[app])
+    scheduler.add_job(db_backup_job, "cron", hour=23, minute=30, timezone="Asia/Kolkata")
+    scheduler.add_job(process_refresh_requests_job, "interval", seconds=60, args=[app])
+    scheduler.add_job(process_backfill_requests_job, "interval", seconds=20, args=[app])
     scheduler.start()

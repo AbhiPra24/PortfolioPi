@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from decimal import Decimal
+
 import asyncpg
 from dotenv import load_dotenv
 
@@ -20,6 +21,7 @@ TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 BACKUP_FILE = os.path.join(OUTPUT_DIR, f"supabase_backup_{TIMESTAMP}.json")
 SQL_FILE = os.path.join(OUTPUT_DIR, f"supabase_backup_{TIMESTAMP}.sql")
 
+
 def default_json_serializer(obj):
     if isinstance(obj, (datetime.date, datetime.datetime)):
         return obj.isoformat()
@@ -29,14 +31,15 @@ def default_json_serializer(obj):
         return obj.hex()
     return str(obj)
 
+
 async def run_backup():
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     conn = await asyncpg.connect(DATABASE_URL)
-    
+
     # 1. Fetch tables in public schema
     tables = await conn.fetch("""
-        SELECT table_name 
-        FROM information_schema.tables 
+        SELECT table_name
+        FROM information_schema.tables
         WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
         ORDER BY table_name;
     """)
@@ -49,39 +52,42 @@ async def run_backup():
             "source_host": DATABASE_URL.split("@")[-1],
             "table_count": len(table_names),
         },
-        "tables": {}
+        "tables": {},
     }
 
     sql_statements = [
-        f"-- Supabase Database Backup: public schema",
+        "-- Supabase Database Backup: public schema",
         f"-- Date: {datetime.datetime.now().isoformat()}",
         f"-- Source: {DATABASE_URL.split('@')[-1]}",
         "",
         "BEGIN;",
-        ""
+        "",
     ]
 
     total_rows = 0
     for tbl in table_names:
-        cols_info = await conn.fetch("""
+        cols_info = await conn.fetch(
+            """
             SELECT column_name, data_type, udt_name, is_nullable
-            FROM information_schema.columns 
+            FROM information_schema.columns
             WHERE table_schema = 'public' AND table_name = $1
             ORDER BY ordinal_position;
-        """, tbl)
-        
+        """,
+            tbl,
+        )
+
         col_names = [c["column_name"] for c in cols_info]
-        
+
         rows = await conn.fetch(f'SELECT * FROM "public"."{tbl}"')
         row_dicts = [dict(r) for r in rows]
-        
+
         print(f"Backing up '{tbl}': {len(row_dicts)} rows")
         total_rows += len(row_dicts)
 
         backup_data["tables"][tbl] = {
             "columns": [dict(c) for c in cols_info],
             "row_count": len(row_dicts),
-            "rows": row_dicts
+            "rows": row_dicts,
         }
 
         # Generate SQL Inserts
@@ -106,8 +112,10 @@ async def run_backup():
                     else:
                         str_val = str(val).replace("'", "''")
                         values_escaped.append(f"'{str_val}'")
-                
-                sql_statements.append(f'INSERT INTO "public"."{tbl}" ({cols_clause}) VALUES ({", ".join(values_escaped)});')
+
+                sql_statements.append(
+                    f'INSERT INTO "public"."{tbl}" ({cols_clause}) VALUES ({", ".join(values_escaped)});'
+                )
 
     sql_statements.append("")
     sql_statements.append("COMMIT;")
@@ -126,6 +134,7 @@ async def run_backup():
     print(f"Total Rows Saved: {total_rows}")
     print(f"JSON Backup File: {BACKUP_FILE} ({os.path.getsize(BACKUP_FILE) / 1024 / 1024:.2f} MB)")
     print(f"SQL Dump File:    {SQL_FILE} ({os.path.getsize(SQL_FILE) / 1024 / 1024:.2f} MB)")
+
 
 if __name__ == "__main__":
     asyncio.run(run_backup())

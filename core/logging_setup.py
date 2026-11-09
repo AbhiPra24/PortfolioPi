@@ -7,14 +7,12 @@ from logging.handlers import RotatingFileHandler
 
 def setup_logging():
     os.makedirs("logs", exist_ok=True)
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
-    file_handler = RotatingFileHandler(
-        "logs/portfoliopi.log", maxBytes=5*1024*1024, backupCount=5
-    )
+    file_handler = RotatingFileHandler("logs/portfoliopi.log", maxBytes=5 * 1024 * 1024, backupCount=5)
     file_handler.setFormatter(logging.Formatter(log_format))
 
     console_handler = logging.StreamHandler()

@@ -7,12 +7,11 @@ Provides:
   and funds transfer can happen with 1 click without violating read-only broker API constraints.
 """
 
-from dataclasses import dataclass, field
-import io
 import csv
-from typing import Any, Dict, List, Optional, Set
+import io
 import urllib.parse
-
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set
 
 # Well-known illiquid instrument tickers / patterns on Indian exchanges
 # (REITs, InvITs, Debt ETFs, G-Sec ETFs, SDL ETFs, CPSE Debt, etc.)
@@ -47,13 +46,14 @@ DEFAULT_ILLIQUID_ASSETS: Set[str] = {
 }
 
 # Default slip protection buffers
-DEFAULT_BUFFER_PCT: float = 0.003          # 0.3% standard for liquid equities
-DEFAULT_ILLIQUID_BUFFER_PCT: float = 0.008 # 0.8% for illiquid assets (REITs, InvITs, Debt ETFs)
+DEFAULT_BUFFER_PCT: float = 0.003  # 0.3% standard for liquid equities
+DEFAULT_ILLIQUID_BUFFER_PCT: float = 0.008  # 0.8% for illiquid assets (REITs, InvITs, Debt ETFs)
 
 
 @dataclass
 class BasketOrder:
     """Represents a single order item in an ICICI Trade Racer basket."""
+
     stock_code: str
     action: str = "BUY"  # BUY or SELL
     quantity: int = 1
@@ -263,6 +263,7 @@ def parse_trade_racer_csv(csv_content: str) -> List[BasketOrder]:
 @dataclass
 class UpiMandateSummary:
     """UPI deep-link & mandate summary for one-tap execution / funds transfer."""
+
     payee_vpa: str
     payee_name: str
     amount: float
@@ -372,7 +373,9 @@ def create_rebalance_execution_payload(
     asset_buffers : Optional[Dict[str, float]]
         Custom overrides for specific symbols (e.g. 0.008 for REITs/InvITs).
     """
-    effective_orders = apply_slip_protection(orders, buffer_pct=buffer_pct, asset_buffers=asset_buffers) if slip_protection else orders
+    effective_orders = (
+        apply_slip_protection(orders, buffer_pct=buffer_pct, asset_buffers=asset_buffers) if slip_protection else orders
+    )
     csv_payload = generate_trade_racer_csv(effective_orders)
 
     total_buy_value = 0.0
