@@ -2,6 +2,8 @@
 
 from typing import Optional
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 
 def format_portfolio_message(holdings: list) -> str:
     if not holdings:
@@ -144,145 +146,142 @@ def format_cashflow_message(dividend_rows: list, total_holdings_count: int = 0) 
     return msg
 
 
+def build_morning_brief_keyboard() -> InlineKeyboardMarkup:
+    """1-tap drilldown buttons attached below the 5-second morning verdict."""
+    keyboard = [
+        [
+            InlineKeyboardButton("📋 Action Plan & CSV", callback_data="cmd_action_plan"),
+            InlineKeyboardButton("🎯 View Watchlist Signals", callback_data="cmd_signals"),
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
 def format_morning_brief(
     portfolio_summary: dict,
-    audited_holdings: list,
-    sip_changes: list,
-    stage_breakdown: Optional[dict] = None,
+    audited_holdings: list[dict],
+    sip_changes: list[str],
     cash_sweep_info: Optional[dict] = None,
 ) -> str:
-    """Format daily 08:00 AM IST morning brief using Management by Exception (Inverted Pyramid).
-
-    Tiers:
-    - Tier 1: 1-Second Verdict (Action Required vs All Clear, Net Value, P&L, Cash)
-    - Tier 2: Hard Capital Preservation (🔴 Immediate Exits)
-    - Tier 3: Tactical Profit Locks & Risk Caps (🟡 Trims / Locks)
-    - Tier 4: SIP & Float Exceptions (🔵 Paused SIPs, Idle Cash Sweep)
-    - Tier 5: The Healthy Baseline (🟢 Aggregate Steady Count)
     """
-    exits = [h for h in audited_holdings if h.get("action") in ("SELL", "EXIT", "STOP_LOSS")]
-    trims = [h for h in audited_holdings if h.get("action") in ("TRIM", "LOCK_PROFIT", "REDUCE")]
+    Renders the 08:00 AM IST Defensive Verdict Brief (Inverted Pyramid).
+    Expects ONLY owned holdings (`is_held == True`) in `audited_holdings`.
+    """
+    exits = [h for h in audited_holdings if h.get("action") in ("EXIT", "SELL_100_IMMEDIATELY", "SELL")]
+    trims = [h for h in audited_holdings if h.get("action") in ("TRIM", "LOCK_PROFIT", "PAIRED_TAX_NEUTRAL_TRIM")]
     adds = [h for h in audited_holdings if h.get("action") in ("BUY_MORE", "ADD_WINNER")]
 
-    total_actions = len(exits) + len(trims) + len(adds)
-    if total_actions > 0:
-        status_line = f"<b>STATUS: ⚡ ACTION REQUIRED ({total_actions} Order{'s' if total_actions > 1 else ''})</b>"
-    else:
-        status_line = "<b>STATUS: ✅ ALL CLEAR (0 Orders Pending)</b>"
+    # Partition remaining steady holdings by Weinstein stage / asset class
+    actionable_tickers = {h["ticker"] for h in (exits + trims + adds)}
+    steady = [h for h in audited_holdings if h["ticker"] not in actionable_tickers]
 
-    current_val = portfolio_summary.get("current_val", 0.0)
-    current_val_lakhs = current_val / 100000.0
-    pnl = portfolio_summary.get("pnl", 0.0)
+    stg2_cnt = sum(1 for h in steady if h.get("stage") == 2 and h.get("asset_class") == "EQUITY")
+    stg1_cnt = sum(1 for h in steady if h.get("stage") == 1 and h.get("asset_class") == "EQUITY")
+    yield_macro_cnt = len(steady) - stg2_cnt - stg1_cnt
+
+    total_actions = len(exits) + len(trims) + len(adds)
+    status_line = (
+        f"<b>STATUS: ⚡ ACTION REQUIRED ({total_actions} Orders)</b>"
+        if total_actions > 0
+        else "<b>STATUS: ✅ ALL CLEAR (0 Orders Pending)</b>"
+    )
+
+    val_lakhs = portfolio_summary.get("current_val_lakhs", 0.0)
     pnl_pct = portfolio_summary.get("pnl_pct", 0.0)
+    pnl_k = portfolio_summary.get("unrealized_pnl", 0.0) / 1000.0
     cash = portfolio_summary.get("cash", 0.0)
 
-    pnl_sign = "+" if pnl >= 0 else ""
-    pnl_k = pnl / 1000.0
-
+    # Tier 1: 1-Second Verdict Header
     lines = [
         "🚦 <b>PORTFOLIOPI | 08:00 IST</b>",
         status_line,
-        (
-            f"💰 <b>₹{current_val_lakhs:.2f}L</b> ({pnl_pct:+.2f}% | {pnl_sign}₹{pnl_k:.1f}k) "
-            f"• 💵 Cash: <b>₹{cash:,.0f}</b>"
-        ),
+        f"💰 <b>₹{val_lakhs:.2f}L</b> ({pnl_pct:+.2f}% | {pnl_k:+.1f}k) • 💵 Cash: <b>₹{cash:,.0f}</b>",
     ]
 
-    has_exceptions = False
-
+    # Tier 2: Hard Capital Preservation (Exits)
     if exits:
-        has_exceptions = True
         lines.append("\n━━━━━━━━━━━━━━━━━━━━")
         lines.append("🔴 <b>IMMEDIATE EXITS (Stop / Stage 4)</b>")
         for h in exits:
-            tkr = h.get("ticker", "")
             qty = h.get("qty", 0)
-            directive = h.get("directive", h.get("rationale", "Stop breached"))
-            qty_str = f" (Qty: {qty})" if qty else ""
-            lines.append(f"• <b>{tkr}</b>{qty_str} — {directive}")
+            directive = h.get("directive", "Chandelier stop breached; liquidate 100%.")
+            lines.append(f"• <b>{h['ticker']}</b> (Qty: {qty}) — {directive}")
 
+    # Tier 3: Tactical Profit Locks & Risk Caps (Trims)
     if trims:
-        if not has_exceptions:
+        if not exits:
             lines.append("\n━━━━━━━━━━━━━━━━━━━━")
-        has_exceptions = True
         lines.append("\n🟡 <b>TACTICAL TRIMS & PROFIT LOCKS</b>")
         for h in trims:
-            tkr = h.get("ticker", "")
-            directive = h.get("directive", h.get("rationale", "Lock profit / trim"))
-            lines.append(f"• <b>{tkr}</b> — {directive}")
+            directive = h.get("directive", "Lock partial gains; trail core stop.")
+            lines.append(f"• <b>{h['ticker']}</b> — {directive}")
 
+    # Tier 3b: High-Conviction Pullback Adds on Existing Winners
     if adds:
-        if not has_exceptions:
+        if not exits and not trims:
             lines.append("\n━━━━━━━━━━━━━━━━━━━━")
-        has_exceptions = True
         lines.append("\n➕ <b>ADD TO WINNERS (Stage 2 Pullback)</b>")
         for h in adds:
-            tkr = h.get("ticker", "")
-            directive = h.get("directive", h.get("rationale", "Institutional support bounce"))
-            lines.append(f"• <b>{tkr}</b> — {directive}")
+            directive = h.get("directive", "Institutional bounce zone (0.5x ATR).")
+            lines.append(f"• <b>{h['ticker']}</b> — {directive}")
 
-    # Tier 4: SIP & Float updates
-    sip_or_float_lines = []
-    if sip_changes:
-        sip_or_float_lines.append(f"• <b>Paused SIPs ({len(sip_changes)}):</b> {', '.join(sip_changes)}")
-    if cash_sweep_info and cash_sweep_info.get("eligible"):
-        target_inst = cash_sweep_info.get("target", "LIQUIDBEES")
-        amt = cash_sweep_info.get("amount", 0.0)
-        sip_or_float_lines.append(f"• <b>Cash Sweep:</b> ₹{amt:,.1f}k idle float ready → <code>{target_inst}</code>")
-
-    if sip_or_float_lines:
-        if not has_exceptions:
+    # Tier 4: SIP Pauses & Idle Cash Float Exceptions
+    has_sweep = bool(cash_sweep_info and cash_sweep_info.get("eligible"))
+    if sip_changes or has_sweep:
+        if not (exits or trims or adds):
             lines.append("\n━━━━━━━━━━━━━━━━━━━━")
-        has_exceptions = True
         lines.append("\n🔵 <b>SIP & FLOAT UPDATES</b>")
-        lines.extend(sip_or_float_lines)
+        if sip_changes:
+            lines.append(f"• <b>Paused/Stopped SIPs ({len(sip_changes)}):</b> {', '.join(sip_changes)}")
+        if has_sweep:
+            float_amt = cash_sweep_info.get("idle_cash", cash)
+            target = cash_sweep_info.get("target_etf", "LIQUIDBEES")
+            lines.append(f"• <b>Cash Sweep:</b> ₹{float_amt:,.0f} idle float ready → <code>{target}</code>")
 
-    # Tier 5: Healthy Baseline
-    if has_exceptions:
-        lines.append("\n━━━━━━━━━━━━━━━━━━━━")
-    else:
-        lines.append("")
-
-    steady_count = len(audited_holdings) - len(exits) - len(trims) - len(adds)
-    if steady_count < 0:
-        steady_count = 0
-
-    if stage_breakdown:
-        s2 = stage_breakdown.get("stage_2", 0)
-        s1 = stage_breakdown.get("stage_1", 0)
-        s_other = stage_breakdown.get("yield_or_macro", 0)
-        breakdown_str = f" ({s2} Stage 2 • {s1} Stage 1 • {s_other} Yield/Macro)"
-    else:
-        breakdown_str = ""
-
-    lines.append(f"🟢 <b>{steady_count} Holdings Steady</b>{breakdown_str}")
+    # Tier 5: Healthy Baseline Collapse
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+    lines.append(
+        f"🟢 <b>{len(steady)} Holdings Steady</b> "
+        f"({stg2_cnt} Stage 2 • {stg1_cnt} Stage 1 • {yield_macro_cnt} Yield/Macro)"
+    )
     if total_actions == 0:
         lines.append("<i>No stop breaches, Stage 4 breakdowns, or overweight alerts today.</i>")
     else:
-        lines.append("<i>All trailing stops & 200-SMA guardrails intact for remaining assets.</i>")
+        lines.append("<i>All remaining trailing stops & 200-SMA guardrails intact.</i>")
 
-    return "\n".join(lines).strip()
-
-
-def format_premarket_opportunities_message(
-    candidates: list,
-    available_cash: float,
-) -> str:
-    """Format 09:00 AM IST pre-market deployment alert strictly for unowned watchlist leaders."""
-    lines = [
-        "🎯 <b>PORTFOLIOPI | 09:00 IST PRE-MARKET RADAR</b>",
-        f"💵 <b>Available Deployable Cash:</b> ₹{available_cash:,.0f}\n",
-        "🚀 <b>ACTIONABLE WATCHLIST BREAKOUTS (Minervini 7/7):</b>",
-    ]
-    for c in candidates:
-        tkr = c.get("ticker", "")
-        cmp = c.get("price", 0.0)
-        rs = c.get("rs_score", 80)
-        vol = c.get("volume_ratio", 1.5)
-        score = c.get("score", 7)
-        lines.append(f"• <b>{tkr}</b> @ ₹{cmp:,.2f} | Minervini: {score}/7 | RS: {rs} | Vol: {vol:.1f}x")
-        if c.get("entry_note"):
-            lines.append(f"  └ <i>{c['entry_note']}</i>")
-
-    lines.append("\n<i>Execution check: Verify pre-open tick & spread before placing limit orders.</i>")
     return "\n".join(lines)
+
+
+def format_premarket_opportunities(
+    candidates: list[dict],
+    available_cash: float,
+    max_per_trade: float = 15000.0,
+) -> str:
+    """
+    Renders the 09:00 AM IST Offensive Breakout Alert (unowned watchlist only).
+    """
+    lines = [
+        "🎯 <b>PORTFOLIOPI | 09:00 PRE-MARKET BREAKOUTS</b>",
+        f"💵 Deployable Cash Float: <b>₹{available_cash:,.0f}</b> (Cap: ₹{max_per_trade:,.0f}/idea)",
+        "━━━━━━━━━━━━━━━━━━━━",
+    ]
+
+    for c in candidates[:5]:
+        cmp = c.get("cmp", 0.0)
+        stop = c.get("stop_loss", 0.0)
+        risk_pct = ((cmp - stop) / cmp * 100) if cmp > 0 else 0.0
+        vol_ratio = c.get("vol_ratio", 1.0)
+        rs_score = c.get("rs_score", 0)
+        sug_qty = int(min(available_cash, max_per_trade) // cmp) if cmp > 0 else 0
+
+        lines.append(
+            f"🚀 <b>{c['ticker']}</b> @ ₹{cmp:,.2f} (Minervini 7/7 • RS {rs_score})\n"
+            f"   └ Vol: <b>{vol_ratio:.1f}x</b> | Stop: ₹{stop:,.2f} (-{risk_pct:.1f}%) | Sug Qty: <b>{sug_qty}</b>"
+        )
+
+    lines.append("\n<i>Tap /signals for full technical matrix or /action_plan for Trade Racer CSV.</i>")
+    return "\n".join(lines)
+
+
+# Backwards compatibility alias
+format_premarket_opportunities_message = format_premarket_opportunities

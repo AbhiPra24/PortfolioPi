@@ -754,7 +754,9 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     dispatch = {
         "portfolio": portfolio_command,
         "signals": signals_command,
+        "cmd_signals": signals_command,
         "action_plan": action_plan_command,
+        "cmd_action_plan": action_plan_command,
         "audit": audit_command,
         "funds": funds_command,
         "cashflow": cashflow_command,

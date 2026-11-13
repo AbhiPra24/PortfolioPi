@@ -702,6 +702,8 @@ async def run_market_data_refresh(app=None, send_digest=False):
                         "ticker": tkr,
                         "qty": qty,
                         "price": price,
+                        "stage": stage_num,
+                        "asset_class": h.get("asset_class", "EQUITY"),
                         "action": norm_action,
                         "directive": directive,
                         "rationale": rationale,
@@ -730,26 +732,19 @@ async def run_market_data_refresh(app=None, send_digest=False):
                         "target": "LIQUIDBEES",
                     }
 
-                stage_breakdown = {
-                    "stage_2": stage_2_count,
-                    "stage_1": stage_1_count,
-                    "yield_or_macro": yield_or_macro_count,
-                }
-
                 # Construct Exception-driven Morning Brief
                 morning_msg = format_morning_brief(
                     portfolio_summary=portfolio_summary,
                     audited_holdings=audited_holdings,
                     sip_changes=sip_changes,
-                    stage_breakdown=stage_breakdown,
                     cash_sweep_info=cash_sweep_info,
                 )
 
                 # Attach 1-tap quick action drilldowns
                 inline_buttons = InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("📋 Action Plan", callback_data="action_plan"),
-                        InlineKeyboardButton("🎯 Watchlist Signals", callback_data="signals"),
+                        InlineKeyboardButton("📋 Action Plan & CSV", callback_data="cmd_action_plan"),
+                        InlineKeyboardButton("🎯 View Watchlist Signals", callback_data="cmd_signals"),
                     ]
                 ])
 
@@ -806,9 +801,7 @@ async def run_premarket_opportunities(app: Application):
             qualified_candidates = []
             for r in candidates_rows:
                 tkr = r[0]
-                rsi = r[1] or 50.0
                 vol_ratio = r[2] or 1.0
-                pct_52w = r[3] or 0.0
                 comp_score = r[4] or 0.0
 
                 # Check Trend Template (7/7 Minervini) from OHLCV cache
@@ -833,14 +826,13 @@ async def run_premarket_opportunities(app: Application):
 
                 # Must qualify Minervini 7/7 and healthy volume/RS
                 if tt_score >= 6 and vol_ratio >= 1.2:
-                    entry_note = f"52W High Gap: {pct_52w:.1f}% | RSI: {rsi:.1f}"
                     qualified_candidates.append({
                         "ticker": tkr,
-                        "price": cmp,
+                        "cmp": cmp,
+                        "stop_loss": round(cmp * 0.95, 2),
                         "score": tt_score,
                         "rs_score": round(comp_score, 0),
-                        "volume_ratio": vol_ratio,
-                        "entry_note": entry_note,
+                        "vol_ratio": vol_ratio,
                     })
 
             if qualified_candidates:

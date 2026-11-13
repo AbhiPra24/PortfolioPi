@@ -82,3 +82,6 @@ def create_app() -> Application:
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), session_message_handler))
 
     return app
+
+
+build_application = create_app
