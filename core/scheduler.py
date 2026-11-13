@@ -11,7 +11,11 @@ from telegram.ext import Application
 
 from app_config import settings
 
-from .data_refresh import run_breeze_sync, run_market_data_refresh
+from .data_refresh import (
+    run_breeze_sync,
+    run_market_data_refresh,
+    run_premarket_opportunities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,11 @@ async def market_data_refresh_job(app: Application):
     logger.info("Running market data refresh...")
     await run_breeze_sync(app, silent=True)
     await run_market_data_refresh(app, send_digest=False)
+
+
+async def premarket_opportunities_job(app: Application):
+    logger.info("Running 09:00 AM IST pre-market opportunities radar...")
+    await run_premarket_opportunities(app)
 
 
 async def process_refresh_requests_job(app: Application):
@@ -111,7 +120,11 @@ async def db_backup_job():
 
 def start_scheduler(app: Application):
     scheduler = AsyncIOScheduler()
+    # 08:00 AM IST: Defense & Maintenance (Holdings health, stops, SIP pauses, cash float)
     scheduler.add_job(daily_digest_job, "cron", hour=8, minute=0, args=[app], timezone="Asia/Kolkata")
+
+    # 09:00 AM IST: Offense & Deployment (Cash-gated Minervini 7/7 watchlist radar)
+    scheduler.add_job(premarket_opportunities_job, "cron", hour=9, minute=0, args=[app], timezone="Asia/Kolkata")
 
     scheduler.add_job(market_data_refresh_job, "interval", minutes=60, args=[app])
 

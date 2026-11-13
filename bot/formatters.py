@@ -1,5 +1,7 @@
 """Formats raw data and algorithm outputs into readable Telegram messages."""
 
+from typing import Optional
+
 
 def format_portfolio_message(holdings: list) -> str:
     if not holdings:
@@ -140,3 +142,147 @@ def format_cashflow_message(dividend_rows: list, total_holdings_count: int = 0) 
 
     msg += "\n<i>Projections scale automatically as monthly SIPs compound.</i>"
     return msg
+
+
+def format_morning_brief(
+    portfolio_summary: dict,
+    audited_holdings: list,
+    sip_changes: list,
+    stage_breakdown: Optional[dict] = None,
+    cash_sweep_info: Optional[dict] = None,
+) -> str:
+    """Format daily 08:00 AM IST morning brief using Management by Exception (Inverted Pyramid).
+
+    Tiers:
+    - Tier 1: 1-Second Verdict (Action Required vs All Clear, Net Value, P&L, Cash)
+    - Tier 2: Hard Capital Preservation (🔴 Immediate Exits)
+    - Tier 3: Tactical Profit Locks & Risk Caps (🟡 Trims / Locks)
+    - Tier 4: SIP & Float Exceptions (🔵 Paused SIPs, Idle Cash Sweep)
+    - Tier 5: The Healthy Baseline (🟢 Aggregate Steady Count)
+    """
+    exits = [h for h in audited_holdings if h.get("action") in ("SELL", "EXIT", "STOP_LOSS")]
+    trims = [h for h in audited_holdings if h.get("action") in ("TRIM", "LOCK_PROFIT", "REDUCE")]
+    adds = [h for h in audited_holdings if h.get("action") in ("BUY_MORE", "ADD_WINNER")]
+
+    total_actions = len(exits) + len(trims) + len(adds)
+    if total_actions > 0:
+        status_line = f"<b>STATUS: ⚡ ACTION REQUIRED ({total_actions} Order{'s' if total_actions > 1 else ''})</b>"
+    else:
+        status_line = "<b>STATUS: ✅ ALL CLEAR (0 Orders Pending)</b>"
+
+    current_val = portfolio_summary.get("current_val", 0.0)
+    current_val_lakhs = current_val / 100000.0
+    pnl = portfolio_summary.get("pnl", 0.0)
+    pnl_pct = portfolio_summary.get("pnl_pct", 0.0)
+    cash = portfolio_summary.get("cash", 0.0)
+
+    pnl_sign = "+" if pnl >= 0 else ""
+    pnl_k = pnl / 1000.0
+
+    lines = [
+        "🚦 <b>PORTFOLIOPI | 08:00 IST</b>",
+        status_line,
+        (
+            f"💰 <b>₹{current_val_lakhs:.2f}L</b> ({pnl_pct:+.2f}% | {pnl_sign}₹{pnl_k:.1f}k) "
+            f"• 💵 Cash: <b>₹{cash:,.0f}</b>"
+        ),
+    ]
+
+    has_exceptions = False
+
+    if exits:
+        has_exceptions = True
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        lines.append("🔴 <b>IMMEDIATE EXITS (Stop / Stage 4)</b>")
+        for h in exits:
+            tkr = h.get("ticker", "")
+            qty = h.get("qty", 0)
+            directive = h.get("directive", h.get("rationale", "Stop breached"))
+            qty_str = f" (Qty: {qty})" if qty else ""
+            lines.append(f"• <b>{tkr}</b>{qty_str} — {directive}")
+
+    if trims:
+        if not has_exceptions:
+            lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        has_exceptions = True
+        lines.append("\n🟡 <b>TACTICAL TRIMS & PROFIT LOCKS</b>")
+        for h in trims:
+            tkr = h.get("ticker", "")
+            directive = h.get("directive", h.get("rationale", "Lock profit / trim"))
+            lines.append(f"• <b>{tkr}</b> — {directive}")
+
+    if adds:
+        if not has_exceptions:
+            lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        has_exceptions = True
+        lines.append("\n➕ <b>ADD TO WINNERS (Stage 2 Pullback)</b>")
+        for h in adds:
+            tkr = h.get("ticker", "")
+            directive = h.get("directive", h.get("rationale", "Institutional support bounce"))
+            lines.append(f"• <b>{tkr}</b> — {directive}")
+
+    # Tier 4: SIP & Float updates
+    sip_or_float_lines = []
+    if sip_changes:
+        sip_or_float_lines.append(f"• <b>Paused SIPs ({len(sip_changes)}):</b> {', '.join(sip_changes)}")
+    if cash_sweep_info and cash_sweep_info.get("eligible"):
+        target_inst = cash_sweep_info.get("target", "LIQUIDBEES")
+        amt = cash_sweep_info.get("amount", 0.0)
+        sip_or_float_lines.append(f"• <b>Cash Sweep:</b> ₹{amt:,.1f}k idle float ready → <code>{target_inst}</code>")
+
+    if sip_or_float_lines:
+        if not has_exceptions:
+            lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        has_exceptions = True
+        lines.append("\n🔵 <b>SIP & FLOAT UPDATES</b>")
+        lines.extend(sip_or_float_lines)
+
+    # Tier 5: Healthy Baseline
+    if has_exceptions:
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+    else:
+        lines.append("")
+
+    steady_count = len(audited_holdings) - len(exits) - len(trims) - len(adds)
+    if steady_count < 0:
+        steady_count = 0
+
+    if stage_breakdown:
+        s2 = stage_breakdown.get("stage_2", 0)
+        s1 = stage_breakdown.get("stage_1", 0)
+        s_other = stage_breakdown.get("yield_or_macro", 0)
+        breakdown_str = f" ({s2} Stage 2 • {s1} Stage 1 • {s_other} Yield/Macro)"
+    else:
+        breakdown_str = ""
+
+    lines.append(f"🟢 <b>{steady_count} Holdings Steady</b>{breakdown_str}")
+    if total_actions == 0:
+        lines.append("<i>No stop breaches, Stage 4 breakdowns, or overweight alerts today.</i>")
+    else:
+        lines.append("<i>All trailing stops & 200-SMA guardrails intact for remaining assets.</i>")
+
+    return "\n".join(lines).strip()
+
+
+def format_premarket_opportunities_message(
+    candidates: list,
+    available_cash: float,
+) -> str:
+    """Format 09:00 AM IST pre-market deployment alert strictly for unowned watchlist leaders."""
+    lines = [
+        "🎯 <b>PORTFOLIOPI | 09:00 IST PRE-MARKET RADAR</b>",
+        f"💵 <b>Available Deployable Cash:</b> ₹{available_cash:,.0f}\n",
+        "🚀 <b>ACTIONABLE WATCHLIST BREAKOUTS (Minervini 7/7):</b>",
+    ]
+    for c in candidates:
+        tkr = c.get("ticker", "")
+        cmp = c.get("price", 0.0)
+        rs = c.get("rs_score", 80)
+        vol = c.get("volume_ratio", 1.5)
+        score = c.get("score", 7)
+        lines.append(f"• <b>{tkr}</b> @ ₹{cmp:,.2f} | Minervini: {score}/7 | RS: {rs} | Vol: {vol:.1f}x")
+        if c.get("entry_note"):
+            lines.append(f"  └ <i>{c['entry_note']}</i>")
+
+    lines.append("\n<i>Execution check: Verify pre-open tick & spread before placing limit orders.</i>")
+    return "\n".join(lines)
