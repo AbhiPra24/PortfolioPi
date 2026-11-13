@@ -640,7 +640,6 @@ async def run_market_data_refresh(app=None, send_digest=False):
                         price = h.get("current_price", 0) or cost
                         qty = h.get("quantity", 0)
                         val = price * qty
-                        cost_basis = cost * qty
                         pnl_pct = ((price - cost) / cost * 100) if cost else 0
                         weight_pct = (val / total_val * 100) if total_val else 0
                         act_row = action_lookup.get(tkr, {})
