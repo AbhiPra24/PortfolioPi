@@ -13,6 +13,7 @@ from algo.screener import run_screener
 from app_config import settings
 from bot.broadcaster import broadcast_message
 from bot.formatters import format_portfolio_message, format_signals_message
+from core.ai_analyst import generate_batch_ai_analysis
 from core.breeze_client import BreezeClient, SessionExpiredError
 from core.portfolio_analytics import update_portfolio_risk_metrics
 from core.session_store import get_session
@@ -621,7 +622,53 @@ async def run_market_data_refresh(app=None, send_digest=False):
                         if "SELL" in r[1] or "TRIM" in r[1]:
                             action_msg += f"🚨 <b>{r[0]}</b>: {r[1]} - <i>{r[2]}</i>\n"
 
+                # 5. AI Risk Audit — batch inference for all holdings via pralabs:edge
+                ai_audit_msg = ""
+                try:
+                    # Build action/stage lookup from what we just computed
+                    action_lookup = {r[0]: {"action": r[1], "rationale": r[2]} for r in action_inserts}
+                    stage_lookup = {r[0]: r[2] for r in stage_inserts}
+
+                    ai_items = []
+                    total_val = sum(
+                        h.get("current_price", 0) * h.get("quantity", 0)
+                        for h in holdings_list
+                    )
+                    for h in holdings_list:
+                        tkr = h["stock_code"]
+                        cost = h.get("average_price", 0)
+                        price = h.get("current_price", 0) or cost
+                        qty = h.get("quantity", 0)
+                        val = price * qty
+                        cost_basis = cost * qty
+                        pnl_pct = ((price - cost) / cost * 100) if cost else 0
+                        weight_pct = (val / total_val * 100) if total_val else 0
+                        act_row = action_lookup.get(tkr, {})
+                        metrics = {
+                            "ticker": tkr,
+                            "price": price,
+                            "stage": stage_lookup.get(tkr),
+                            "action": act_row.get("action", "HOLD"),
+                            "rationale": act_row.get("rationale", ""),
+                        }
+                        portfolio_ctx = {
+                            "weight_pct": round(weight_pct, 2),
+                            "unrealized_pnl_pct": round(pnl_pct, 2),
+                        }
+                        ai_items.append({"ticker": tkr, "metrics": metrics, "portfolio_ctx": portfolio_ctx})
+
+                    if ai_items:
+                        ai_results = await generate_batch_ai_analysis(ai_items, timeout_seconds=25.0)
+                        if ai_results:
+                            ai_audit_msg = "<b>🤖 AI Risk Audit</b> <i>(pralabs:edge)</i>\n"
+                            for tkr, verdict in ai_results.items():
+                                ai_audit_msg += f"<code>{verdict}</code>\n"
+                except Exception as ai_err:
+                    logger.warning(f"AI batch audit skipped in daily digest: {ai_err}")
+
                 digest = f"{port_msg}\n\n{sig_msg}\n\n{action_msg}"
+                if ai_audit_msg:
+                    digest += f"\n\n{ai_audit_msg}"
                 await broadcast_message(app, digest)
 
     except Exception:
