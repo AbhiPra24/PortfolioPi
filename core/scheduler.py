@@ -103,8 +103,17 @@ async def db_backup_job():
 
         async with aiosqlite.connect(settings.db_path) as db:
             await db.execute(f"VACUUM INTO '{backup_file}'")
-
         logger.info(f"Database backed up to {backup_file}")
+
+        # SinchaiAI SQLite backup
+        sinchai_db = '/data/Work/SinchaiAI/sinchai_ai.db'
+        if os.path.exists(sinchai_db):
+            sinchai_backup_file = os.path.join(backup_dir, f"sinchai_ai_{today_str}.db")
+            if os.path.exists(sinchai_backup_file):
+                os.remove(sinchai_backup_file)
+            async with aiosqlite.connect(sinchai_db) as sdb:
+                await sdb.execute(f"VACUUM INTO '{sinchai_backup_file}'")
+            logger.info(f"SinchaiAI database backed up to {sinchai_backup_file}")
 
         # Cleanup backups older than 7 days
         now = time.time()
