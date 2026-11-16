@@ -30,7 +30,7 @@ async def check_service_active(service_name: str) -> str:
         return "unknown"
 
 
-async def inspect_recent_journal_anomalies(hours: int = 4) -> Dict[str, Any]:
+async def inspect_recent_journal_anomalies(hours: int = 3) -> Dict[str, Any]:
     """Inspect recent journalctl logs for portfoliopi and overwatcher to detect anomalies."""
     try:
         since_arg = f"{hours} hours ago"
@@ -51,9 +51,9 @@ async def inspect_recent_journal_anomalies(hours: int = 4) -> Dict[str, Any]:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
         lines = stdout.decode().splitlines()
 
-        critical_crashes = 0
+        crashes = 0
         network_errors = 0
-        warning_errors = 0
+        in_network_trace = False
 
         for line in lines:
             # Filter out expected or noise patterns
@@ -61,31 +61,40 @@ async def inspect_recent_journal_anomalies(hours: int = 4) -> Dict[str, Any]:
                 continue
 
             lower_line = line.lower()
-            if "gaierror" in lower_line or "readerror" in lower_line or "networkerror" in lower_line:
-                network_errors += 1
-            elif "conflict: terminated by other getupdates" in lower_line:
-                critical_crashes += 1
-            elif "traceback" in lower_line or "exception happened" in lower_line or "critical" in lower_line:
-                critical_crashes += 1
-            elif "error" in lower_line:
-                warning_errors += 1
 
-        if critical_crashes > 0:
+            # Detect network polling exceptions (ReadError, gaierror, NetworkError)
+            if "readerror" in lower_line or "gaierror" in lower_line or "networkerror" in lower_line:
+                network_errors += 1
+                in_network_trace = True
+                continue
+
+            if in_network_trace:
+                if "traceback" in lower_line or "file \"" in lower_line or "during handling" in lower_line:
+                    continue
+                else:
+                    in_network_trace = False
+
+            if "conflict: terminated by other getupdates" in lower_line:
+                crashes += 1
+            elif "exception happened while polling for updates" in lower_line:
+                network_errors += 1
+                in_network_trace = True
+            elif "traceback (most recent call last)" in lower_line or "critical" in lower_line or "fatal" in lower_line:
+                crashes += 1
+
+        if crashes > 0:
             level = "CRITICAL"
-            summary = f"{critical_crashes} crash/exception traces in last {hours}h"
+            summary = f"⚠️ {crashes} exception/crash events in last {hours}h"
         elif network_errors > 0:
             level = "WARNING"
-            summary = f"{network_errors} intermittent network/polling errors in last {hours}h (auto-recovered)"
-        elif warning_errors > 0:
-            level = "INFO"
-            summary = f"{warning_errors} non-critical warnings in last {hours}h"
+            summary = f"⚡ {network_errors} intermittent Telegram network drops (auto-recovered)"
         else:
             level = "HEALTHY"
-            summary = f"Zero errors in last {hours}h"
+            summary = "✅ Stable (0 errors in last 3h)"
 
         return {
             "level": level,
-            "critical_count": critical_crashes,
+            "crash_count": crashes,
             "network_error_count": network_errors,
             "summary": summary,
         }
