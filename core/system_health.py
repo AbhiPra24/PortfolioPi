@@ -30,10 +30,11 @@ async def check_service_active(service_name: str) -> str:
         return "unknown"
 
 
-async def inspect_recent_journal_anomalies(hours: int = 3) -> Dict[str, Any]:
+async def inspect_recent_journal_anomalies(hours: int = 2) -> Dict[str, Any]:
     """Inspect recent journalctl logs for portfoliopi and overwatcher to detect anomalies."""
     try:
         since_arg = f"{hours} hours ago"
+        # Query logs since window
         proc = await asyncio.create_subprocess_exec(
             "journalctl",
             "-u",
@@ -53,44 +54,29 @@ async def inspect_recent_journal_anomalies(hours: int = 3) -> Dict[str, Any]:
 
         crashes = 0
         network_errors = 0
-        in_network_trace = False
 
         for line in lines:
-            # Filter out expected or noise patterns
             if "Suppressed BLE alert" in line or "due to fingerprint recency" in line:
                 continue
 
             lower_line = line.lower()
 
-            # Detect network polling exceptions (ReadError, gaierror, NetworkError)
             if "readerror" in lower_line or "gaierror" in lower_line or "networkerror" in lower_line:
                 network_errors += 1
-                in_network_trace = True
-                continue
-
-            if in_network_trace:
-                if "traceback" in lower_line or "file \"" in lower_line or "during handling" in lower_line:
-                    continue
-                else:
-                    in_network_trace = False
-
-            if "conflict: terminated by other getupdates" in lower_line:
+            elif "conflict: terminated by other getupdates" in lower_line:
                 crashes += 1
-            elif "exception happened while polling for updates" in lower_line:
-                network_errors += 1
-                in_network_trace = True
-            elif "traceback (most recent call last)" in lower_line or "critical" in lower_line or "fatal" in lower_line:
+            elif "fatal" in lower_line or "critical" in lower_line:
                 crashes += 1
 
         if crashes > 0:
             level = "CRITICAL"
-            summary = f"⚠️ {crashes} exception/crash events in last {hours}h"
+            summary = f"⚠️ {crashes} critical conflict/crash events in last {hours}h"
         elif network_errors > 0:
             level = "WARNING"
-            summary = f"⚡ {network_errors} intermittent Telegram network drops (auto-recovered)"
+            summary = f"⚡ {network_errors} intermittent network drops in last {hours}h (auto-recovered)"
         else:
             level = "HEALTHY"
-            summary = "✅ Stable (0 errors in last 3h)"
+            summary = f"✅ Healthy & Stable (0 anomalies in last {hours}h)"
 
         return {
             "level": level,
@@ -102,7 +88,7 @@ async def inspect_recent_journal_anomalies(hours: int = 3) -> Dict[str, Any]:
         logger.debug(f"Could not inspect journal logs: {e}")
         return {
             "level": "UNKNOWN",
-            "critical_count": 0,
+            "crash_count": 0,
             "network_error_count": 0,
             "summary": "Log inspection unavailable",
         }
@@ -158,7 +144,7 @@ async def get_system_and_sync_health(db: aiosqlite.Connection) -> Dict[str, Any]
     overwatcher_status = await check_service_active("overwatcher")
 
     # 3. Recent Anomalies
-    anomalies = await inspect_recent_journal_anomalies(hours=4)
+    anomalies = await inspect_recent_journal_anomalies(hours=2)
 
     # 4. Data Health (failures in past 24 hours)
     failures_24h = 0
