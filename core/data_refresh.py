@@ -17,12 +17,14 @@ from algo.trend_template import check_trend_template
 from app_config import settings
 from bot.broadcaster import broadcast_message
 from bot.formatters import (
+    format_daily_system_and_portfolio_digest,
     format_morning_brief,
     format_premarket_opportunities_message,
 )
 from core.breeze_client import BreezeClient, SessionExpiredError
 from core.portfolio_analytics import update_portfolio_risk_metrics
 from core.session_store import get_session
+from core.system_health import get_system_and_sync_health
 
 logger = logging.getLogger(__name__)
 
@@ -732,9 +734,60 @@ async def run_market_data_refresh(app=None, send_digest=False):
                         "target": "LIQUIDBEES",
                     }
 
-                # Construct Exception-driven Morning Brief
-                morning_msg = format_morning_brief(
+                # Calculate 1-day portfolio & holdings performance
+                total_curr_val = 0.0
+                total_prev_val = 0.0
+                holding_movers = []
+
+                for h in holdings_list:
+                    tkr = h["stock_code"]
+                    qty = h.get("quantity", 0)
+                    if not qty or qty <= 0:
+                        continue
+                    curr_p = h.get("current_price", 0.0) or h.get("average_price", 0.0)
+                    
+                    # Fetch latest 2 close prices from ohlcv_cache
+                    async with db.execute(
+                        "SELECT close FROM ohlcv_cache WHERE stock_code = ? ORDER BY date DESC LIMIT 2",
+                        (tkr,),
+                    ) as cur:
+                        closes = [r[0] for r in await cur.fetchall()]
+
+                    if len(closes) >= 2 and closes[1] and closes[1] > 0:
+                        c_curr = closes[0]
+                        c_prev = closes[1]
+                        val_curr = c_curr * qty
+                        val_prev = c_prev * qty
+                        chg_abs = val_curr - val_prev
+                        chg_pct = ((c_curr - c_prev) / c_prev) * 100.0
+                        total_curr_val += val_curr
+                        total_prev_val += val_prev
+                        holding_movers.append((tkr, chg_abs, chg_pct, c_curr))
+                    elif curr_p > 0:
+                        total_curr_val += curr_p * qty
+                        total_prev_val += curr_p * qty
+
+                day_change = total_curr_val - total_prev_val
+                day_change_pct = (day_change / total_prev_val * 100.0) if total_prev_val > 0 else 0.0
+                holding_movers.sort(key=lambda x: x[2], reverse=True)
+                top_gainers = [m for m in holding_movers if m[1] > 0][:3]
+                top_drags = sorted([m for m in holding_movers if m[1] < 0], key=lambda x: x[2])[:3]
+
+                performance_summary = {
+                    "day_change": day_change,
+                    "day_change_pct": day_change_pct,
+                    "top_gainers": top_gainers,
+                    "top_drags": top_drags,
+                }
+
+                # Query System, Daemon, and Breeze sync health
+                system_health = await get_system_and_sync_health(db)
+
+                # Construct Exception-driven Morning Brief with System & Performance Pulse
+                morning_msg = format_daily_system_and_portfolio_digest(
                     portfolio_summary=portfolio_summary,
+                    performance_summary=performance_summary,
+                    system_health=system_health,
                     audited_holdings=audited_holdings,
                     sip_changes=sip_changes,
                     cash_sweep_info=cash_sweep_info,

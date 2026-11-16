@@ -252,6 +252,138 @@ def format_morning_brief(
     return "\n".join(lines)
 
 
+def format_daily_system_and_portfolio_digest(
+    portfolio_summary: dict,
+    performance_summary: dict,
+    system_health: dict,
+    audited_holdings: list[dict],
+    sip_changes: list[str],
+    cash_sweep_info: Optional[dict] = None,
+) -> str:
+    """
+    Renders comprehensive 08:00 AM IST daily Telegram digest combining:
+    1. 1-Day Holdings Performance (₹ and %, top gainers, top drags)
+    2. ICICI Breeze Sync Health (Active vs Expired vs Missing, fallback status)
+    3. PortfolioPi & Overwatcher System & Anomaly Pulse (past 4-6h)
+    4. Defensive Action Plan (Exits, Trims, Stage Breakdown, SIP Pauses)
+    """
+    val_lakhs = portfolio_summary.get("current_val", 0.0) / 100000.0
+    pnl_pct = portfolio_summary.get("pnl_pct", 0.0)
+    pnl_k = portfolio_summary.get("pnl", 0.0) / 1000.0
+    cash = portfolio_summary.get("cash", 0.0)
+
+    # 1-day change stats
+    day_chg = performance_summary.get("day_change", 0.0)
+    day_chg_pct = performance_summary.get("day_change_pct", 0.0)
+    top_gainers = performance_summary.get("top_gainers", [])
+    top_drags = performance_summary.get("top_drags", [])
+
+    # System Health
+    breeze = system_health.get("breeze", {})
+    services = system_health.get("services", {})
+    anomalies = system_health.get("anomalies", {})
+
+    breeze_badge = breeze.get("badge", "⚪")
+    breeze_detail = breeze.get("detail", "Breeze status unknown")
+
+    port_svc = "🟢 Running" if services.get("portfoliopi") == "active" else "🔴 Inactive"
+    over_svc = "🟢 Running" if services.get("overwatcher") == "active" else "🔴 Inactive"
+    anom_summary = anomalies.get("summary", "System normal")
+
+    # Defensive Action sets
+    exits = [h for h in audited_holdings if h.get("action") in ("EXIT", "SELL_100_IMMEDIATELY", "SELL")]
+    trims = [h for h in audited_holdings if h.get("action") in ("TRIM", "LOCK_PROFIT", "PAIRED_TAX_NEUTRAL_TRIM")]
+    adds = [h for h in audited_holdings if h.get("action") in ("BUY_MORE", "ADD_WINNER")]
+    total_actions = len(exits) + len(trims) + len(adds)
+
+    day_dir_emoji = "📈" if day_chg >= 0 else "📉"
+    verdict_badge = "⚡ ACTION REQUIRED" if total_actions > 0 else "✅ ALL CLEAR"
+
+    lines = [
+        "📊 <b>PORTFOLIOPI | DAILY DIGEST & PULSE</b>",
+        f"<b>STATUS: {verdict_badge} ({total_actions} Orders Pending)</b>",
+        f"💰 Valuation: <b>₹{val_lakhs:.2f}L</b> (Overall: {pnl_pct:+.2f}% | ₹{pnl_k:+.1f}k)",
+        f"{day_dir_emoji} 1-Day Change: <b>₹{day_chg:+,.0f} ({day_chg_pct:+.2f}%)</b> • 💵 Cash: <b>₹{cash:,.0f}</b>",
+        "\n━━━━━━━━━━━━━━━━━━━━",
+        "⚙️ <b>SYSTEM & SYNC HEALTH</b>",
+        f"{breeze_badge} <b>ICICI Breeze:</b> {breeze_detail}",
+        f"🤖 <b>Services:</b> PortfolioPi: {port_svc} | Overwatcher: {over_svc}",
+        f"🩺 <b>Health Pulse (4h):</b> {anom_summary}",
+    ]
+
+    if breeze.get("action_required"):
+        lines.append("💡 <i>Send /refresh_session &lt;token&gt; or paste Breeze redirect URL to restore broker sync.</i>")
+
+    # Holdings Performance Movers
+    if top_gainers or top_drags:
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        lines.append("🚀 <b>HOLDINGS MOVERS (1D)</b>")
+        if top_gainers:
+            gain_strs = [f"<b>{g[0]}</b> {g[2]:+.1f}% (₹{g[1]:+,.0f})" for g in top_gainers[:3] if g[1] > 0]
+            if gain_strs:
+                lines.append(f"• <b>Gainers:</b> {', '.join(gain_strs)}")
+        if top_drags:
+            drag_strs = [f"<b>{d[0]}</b> {d[2]:+.1f}% (₹{d[1]:+,.0f})" for d in top_drags[:3] if d[1] < 0]
+            if drag_strs:
+                lines.append(f"• <b>Drags:</b> {', '.join(drag_strs)}")
+
+    # Capital Preservation (Exits)
+    if exits:
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        lines.append("🔴 <b>IMMEDIATE EXITS (Stop / Stage 4)</b>")
+        for h in exits:
+            qty = h.get("qty", 0)
+            directive = h.get("directive", "Chandelier stop breached; liquidate 100%.")
+            lines.append(f"• <b>{h['ticker']}</b> (Qty: {qty}) — {directive}")
+
+    # Tactical Profit Locks (Trims)
+    if trims:
+        if not exits:
+            lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        lines.append("🟡 <b>TACTICAL TRIMS & PROFIT LOCKS</b>")
+        for h in trims:
+            directive = h.get("directive", "Lock partial gains; trail core stop.")
+            lines.append(f"• <b>{h['ticker']}</b> — {directive}")
+
+    # Pullback Adds
+    if adds:
+        if not exits and not trims:
+            lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        lines.append("➕ <b>ADD TO WINNERS (Stage 2 Pullback)</b>")
+        for h in adds:
+            directive = h.get("directive", "Institutional bounce zone.")
+            lines.append(f"• <b>{h['ticker']}</b> — {directive}")
+
+    # SIPs & Float
+    has_sweep = bool(cash_sweep_info and cash_sweep_info.get("eligible"))
+    if sip_changes or has_sweep:
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+        lines.append("🔵 <b>SIP & FLOAT UPDATES</b>")
+        if sip_changes:
+            lines.append(f"• <b>Paused SIPs:</b> {', '.join(sip_changes)}")
+        if has_sweep:
+            float_amt = cash_sweep_info.get("idle_cash", cash)
+            target = cash_sweep_info.get("target_etf", "LIQUIDBEES")
+            lines.append(f"• <b>Cash Sweep:</b> ₹{float_amt:,.0f} idle float ready → <code>{target}</code>")
+
+    # Healthy Baseline summary
+    actionable_tickers = {h["ticker"] for h in (exits + trims + adds)}
+    steady = [h for h in audited_holdings if h["ticker"] not in actionable_tickers]
+    stg2_cnt = sum(1 for h in steady if h.get("stage") == 2 and h.get("asset_class") == "EQUITY")
+    stg1_cnt = sum(1 for h in steady if h.get("stage") == 1 and h.get("asset_class") == "EQUITY")
+    yield_macro_cnt = len(steady) - stg2_cnt - stg1_cnt
+
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+    lines.append(
+        f"🟢 <b>{len(steady)} Holdings Steady</b> "
+        f"({stg2_cnt} Stage 2 • {stg1_cnt} Stage 1 • {yield_macro_cnt} Yield/Macro)"
+    )
+    if total_actions == 0:
+        lines.append("<i>All stop guardrails and 200-SMA intact. No defensive actions required.</i>")
+
+    return "\n".join(lines)
+
+
 def format_premarket_opportunities(
     candidates: list[dict],
     available_cash: float,
