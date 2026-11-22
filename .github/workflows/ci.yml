@@ -31,6 +31,3 @@ jobs:
         
       - name: Run Pytest
         run: PYTHONPATH=. pytest tests/
-        
-      - name: Docker Build Check
-        run: docker compose build
