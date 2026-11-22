@@ -18,7 +18,6 @@ from app_config import settings
 from bot.broadcaster import broadcast_message
 from bot.formatters import (
     format_daily_system_and_portfolio_digest,
-    format_morning_brief,
     format_premarket_opportunities_message,
 )
 from core.breeze_client import BreezeClient, SessionExpiredError
@@ -745,7 +744,7 @@ async def run_market_data_refresh(app=None, send_digest=False):
                     if not qty or qty <= 0:
                         continue
                     curr_p = h.get("current_price", 0.0) or h.get("average_price", 0.0)
-                    
+
                     # Fetch latest 2 close prices from ohlcv_cache
                     async with db.execute(
                         "SELECT close FROM ohlcv_cache WHERE stock_code = ? ORDER BY date DESC LIMIT 2",
