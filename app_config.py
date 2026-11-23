@@ -11,10 +11,12 @@ class Settings(BaseSettings):
     telegram_owner_ids: str = "12345678"
     db_path: str = "data/portfoliopi.db"
     database_url: SecretStr = SecretStr("")
-    ollama_base_url: str = "http://host.docker.internal:11434"
+    ollama_base_url: str = "http://127.0.0.1:11435"
     ollama_model: str = "pralabs:latest"
-    ollama_fallback_url: str = "http://host.docker.internal:11434"
+    ollama_fallback_url: str = "http://127.0.0.1:11434"
     ollama_fallback_model: str = "pralabs:edge"
+    litellm_base_url: str = "http://127.0.0.1:14000/v1"
+    litellm_api_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
